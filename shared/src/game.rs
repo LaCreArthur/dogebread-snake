@@ -205,6 +205,7 @@ impl Food {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, States, Default)]
 pub enum GameState {
     #[default]
+    WaitingToStart,
     Playing,
     GameOver,
 }
@@ -214,6 +215,53 @@ pub enum GameState {
 pub struct MatchState {
     pub alive_count: u32,
     pub total_snakes: u32,
+}
+
+/// Dynamic arena bounds (shrinks over time in battle royale)
+#[derive(Resource, Clone, Copy)]
+pub struct ArenaBounds {
+    pub min_x: i32,
+    pub min_y: i32,
+    pub max_x: i32, // exclusive
+    pub max_y: i32, // exclusive
+}
+
+impl Default for ArenaBounds {
+    fn default() -> Self {
+        Self {
+            min_x: 1,
+            min_y: 1,
+            max_x: GRID_WIDTH - 1,
+            max_y: GRID_HEIGHT - 1,
+        }
+    }
+}
+
+impl ArenaBounds {
+    pub fn contains(&self, pos: GridPos) -> bool {
+        pos.x >= self.min_x && pos.x < self.max_x && pos.y >= self.min_y && pos.y < self.max_y
+    }
+
+    /// Minimum size the arena can shrink to
+    pub fn can_shrink(&self) -> bool {
+        (self.max_x - self.min_x) > 6 && (self.max_y - self.min_y) > 6
+    }
+
+    pub fn shrink(&mut self) {
+        if self.can_shrink() {
+            self.min_x += 1;
+            self.min_y += 1;
+            self.max_x -= 1;
+            self.max_y -= 1;
+        }
+    }
+
+    /// Distance from position to nearest arena wall (0 = on the wall)
+    pub fn wall_distance(&self, pos: GridPos) -> i32 {
+        let dx = (pos.x - self.min_x).min(self.max_x - 1 - pos.x);
+        let dy = (pos.y - self.min_y).min(self.max_y - 1 - pos.y);
+        dx.min(dy)
+    }
 }
 
 /// Timer for dead snake body cleanup

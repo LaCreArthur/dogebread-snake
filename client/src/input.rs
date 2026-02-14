@@ -1,5 +1,4 @@
 use bevy::prelude::*;
-use shared::constants::*;
 use shared::game::*;
 
 /// Read keyboard input and queue direction changes on the player's snake
@@ -38,6 +37,7 @@ pub fn ai_tick(
     mut ai_query: Query<(&mut Snake, &SnakeId), With<AiControlled>>,
     non_ai_snakes: Query<(&Snake, &SnakeId), Without<AiControlled>>,
     food_query: Query<&Food>,
+    bounds: Res<ArenaBounds>,
 ) {
     // Collect segments from all snakes for collision avoidance
     // First collect from non-AI snakes (separate query)
@@ -76,8 +76,8 @@ pub fn ai_tick(
             let delta = dir.delta();
             let next = GridPos::new(head.x + delta.x, head.y + delta.y);
 
-            // Wall = death
-            if !next.in_bounds() {
+            // Wall = death (use dynamic arena bounds)
+            if !bounds.contains(next) {
                 continue;
             }
 
@@ -110,9 +110,9 @@ pub fn ai_tick(
                 score += 100 - nearest_food.distance(next);
             }
 
-            // Prefer staying away from walls
-            let wall_dist = next.x.min(next.y).min(GRID_WIDTH - 1 - next.x).min(GRID_HEIGHT - 1 - next.y);
-            score += wall_dist * 2;
+            // Prefer staying away from walls (uses dynamic bounds)
+            let wall_dist = bounds.wall_distance(next);
+            score += wall_dist * 3;
 
             // Slight preference for keeping current direction (less jittery)
             if dir == snake.direction {

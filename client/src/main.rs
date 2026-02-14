@@ -9,6 +9,8 @@ use shared::game::*;
 
 const NUM_SNAKES: u32 = 4; // 1 player + 3 AI
 const NUM_FOOD: usize = 8;
+const ARENA_SHRINK_INTERVAL: f32 = 12.0; // seconds between each shrink
+const SPEED_INCREASE_INTERVAL: f32 = 20.0; // seconds between speed bumps
 
 /// Timer resource for tick-based movement
 #[derive(Resource)]
@@ -51,6 +53,14 @@ fn main() {
         })
         .insert_resource(SimpleRng::new())
         .insert_resource(MatchState::default())
+        .insert_resource(ArenaBounds::default())
+        .insert_resource(ArenaShrinkTimer {
+            timer: Timer::from_seconds(ARENA_SHRINK_INTERVAL, TimerMode::Repeating),
+        })
+        .insert_resource(SpeedTimer {
+            timer: Timer::from_seconds(SPEED_INCREASE_INTERVAL, TimerMode::Repeating),
+        })
+        .insert_resource(MatchTimer { elapsed: 0.0 })
         .insert_resource(ScreenshotTimer {
             timer: Timer::from_seconds(1.0, TimerMode::Repeating),
             enabled: std::env::var("AUTO_SCREENSHOT").is_ok(),
@@ -58,24 +68,37 @@ fn main() {
         })
         .init_state::<GameState>()
         .add_systems(Startup, (rendering::spawn_grid, rendering::spawn_ui, spawn_match))
+        // Waiting to start: show prompt, wait for first input
+        .add_systems(OnEnter(GameState::WaitingToStart), rendering::show_start_prompt)
+        .add_systems(OnExit(GameState::WaitingToStart), rendering::hide_start_prompt)
+        .add_systems(Update, wait_for_start.run_if(in_state(GameState::WaitingToStart)))
+        // Playing: game logic only
         .add_systems(
             Update,
             (
                 input::handle_input,
                 input::ai_tick,
                 game_tick.after(input::handle_input).after(input::ai_tick),
-                rendering::render_snakes.after(game_tick),
-                rendering::render_food.after(game_tick),
-                rendering::update_alive_text.after(game_tick),
-                rendering::camera_follow,
+                arena_shrink.after(game_tick),
+                speed_increase,
+                track_match_time,
             )
                 .run_if(in_state(GameState::Playing)),
         )
-        .add_systems(Update, (restart_on_space, cleanup_dead_snakes))
+        // Game over
         .add_systems(OnEnter(GameState::GameOver), rendering::show_game_over)
         .add_systems(OnExit(GameState::GameOver), rendering::hide_game_over)
         .add_systems(Update, restart_on_space.run_if(in_state(GameState::GameOver)))
-        .add_systems(Update, auto_screenshot)
+        // Always running (rendering, cleanup, camera)
+        .add_systems(Update, (
+            rendering::render_snakes,
+            rendering::render_food,
+            rendering::update_alive_text,
+            rendering::update_grid_cells,
+            rendering::camera_follow,
+            cleanup_dead_snakes,
+            auto_screenshot,
+        ))
         .run();
 }
 
@@ -135,6 +158,7 @@ fn game_tick(
     food_query: Query<(Entity, &Food)>,
     mut match_state: ResMut<MatchState>,
     mut next_state: ResMut<NextState<GameState>>,
+    bounds: Res<ArenaBounds>,
 ) {
     tick.timer.tick(time.delta());
     if !tick.timer.just_finished() {
@@ -164,8 +188,8 @@ fn game_tick(
     let mut kills: Vec<Entity> = Vec::new();
 
     for (entity, my_id, head) in &new_heads {
-        // Wall collision
-        if !head.in_bounds() {
+        // Wall collision (uses dynamic arena bounds)
+        if !bounds.contains(*head) {
             kills.push(*entity);
             continue;
         }
@@ -260,13 +284,13 @@ fn game_tick(
         }
     }
 
-    // Respawn food to maintain count
+    // Respawn food inside current arena bounds
     let remaining_food = food_query.iter().count() - foods_eaten;
     let target_food = NUM_FOOD;
     if remaining_food < target_food {
         for _ in 0..(target_food - remaining_food) {
-            let x = rng.range(1, GRID_WIDTH - 1);
-            let y = rng.range(1, GRID_HEIGHT - 1);
+            let x = rng.range(bounds.min_x + 1, bounds.max_x - 1);
+            let y = rng.range(bounds.min_y + 1, bounds.max_y - 1);
             commands.spawn(Food::new(x, y));
         }
     }
@@ -285,6 +309,9 @@ fn restart_on_space(
     mut match_state: ResMut<MatchState>,
     mut next_state: ResMut<NextState<GameState>>,
     state: Res<State<GameState>>,
+    mut bounds: ResMut<ArenaBounds>,
+    mut tick: ResMut<GameTick>,
+    mut match_timer: ResMut<MatchTimer>,
 ) {
     // Only restart if game is over, or if R is pressed during play
     let should_restart = (*state.get() == GameState::GameOver && keyboard.just_pressed(KeyCode::Space))
@@ -334,7 +361,36 @@ fn restart_on_space(
 
     match_state.total_snakes = NUM_SNAKES;
     match_state.alive_count = NUM_SNAKES;
-    next_state.set(GameState::Playing);
+    *bounds = ArenaBounds::default();
+    tick.timer.set_duration(std::time::Duration::from_secs_f32(TICK_INTERVAL as f32));
+    match_timer.elapsed = 0.0;
+    next_state.set(GameState::WaitingToStart);
+}
+
+/// Wait for the player to press an arrow key before starting the game
+fn wait_for_start(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    mut next_state: ResMut<NextState<GameState>>,
+    mut snake_query: Query<&mut Snake, With<PlayerControlled>>,
+) {
+    let dir = if keyboard.just_pressed(KeyCode::ArrowUp) || keyboard.just_pressed(KeyCode::KeyW) {
+        Some(Direction::Up)
+    } else if keyboard.just_pressed(KeyCode::ArrowDown) || keyboard.just_pressed(KeyCode::KeyS) {
+        Some(Direction::Down)
+    } else if keyboard.just_pressed(KeyCode::ArrowLeft) || keyboard.just_pressed(KeyCode::KeyA) {
+        Some(Direction::Left)
+    } else if keyboard.just_pressed(KeyCode::ArrowRight) || keyboard.just_pressed(KeyCode::KeyD) {
+        Some(Direction::Right)
+    } else {
+        None
+    };
+
+    if let Some(d) = dir {
+        if let Ok(mut snake) = snake_query.single_mut() {
+            snake.set_direction(d);
+        }
+        next_state.set(GameState::Playing);
+    }
 }
 
 /// Clean up dead snake bodies after their death timer expires
@@ -357,6 +413,82 @@ fn cleanup_dead_snakes(
             commands.entity(snake_entity).despawn();
         }
     }
+}
+
+/// Timer for arena shrinking
+#[derive(Resource)]
+struct ArenaShrinkTimer {
+    timer: Timer,
+}
+
+/// Timer for speed increases
+#[derive(Resource)]
+struct SpeedTimer {
+    timer: Timer,
+}
+
+/// Match elapsed time
+#[derive(Resource)]
+struct MatchTimer {
+    elapsed: f32,
+}
+
+/// Shrink the arena and kill snakes caught outside
+fn arena_shrink(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut shrink_timer: ResMut<ArenaShrinkTimer>,
+    mut bounds: ResMut<ArenaBounds>,
+    mut snake_query: Query<(Entity, &mut Snake)>,
+) {
+    shrink_timer.timer.tick(time.delta());
+    if !shrink_timer.timer.just_finished() {
+        return;
+    }
+
+    if !bounds.can_shrink() {
+        return;
+    }
+
+    bounds.shrink();
+
+    // Kill snakes with heads outside new bounds
+    for (entity, mut snake) in &mut snake_query {
+        if !snake.alive {
+            continue;
+        }
+        if !bounds.contains(snake.head()) {
+            snake.alive = false;
+            commands.entity(entity).insert(DeathTimer {
+                timer: Timer::from_seconds(2.0, TimerMode::Once),
+            });
+        }
+    }
+}
+
+/// Gradually increase game speed
+fn speed_increase(
+    time: Res<Time>,
+    mut speed_timer: ResMut<SpeedTimer>,
+    mut tick: ResMut<GameTick>,
+) {
+    speed_timer.timer.tick(time.delta());
+    if !speed_timer.timer.just_finished() {
+        return;
+    }
+
+    // Increase speed by reducing tick interval (min ~60ms = 16 ticks/s)
+    let current = tick.timer.duration().as_secs_f32();
+    let new_interval = (current * 0.85).max(0.06);
+    tick.timer.set_duration(std::time::Duration::from_secs_f32(new_interval));
+}
+
+/// Track match elapsed time
+fn track_match_time(
+    time: Res<Time>,
+    mut match_timer: ResMut<MatchTimer>,
+) {
+    match_timer.elapsed += time.delta_secs();
 }
 
 /// Auto-screenshot resource (enable with AUTO_SCREENSHOT=1 env var)

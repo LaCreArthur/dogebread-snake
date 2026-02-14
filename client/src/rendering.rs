@@ -2,9 +2,11 @@ use bevy::prelude::*;
 use shared::constants::*;
 use shared::game::*;
 
-/// Marker for grid background cells
+/// Grid background cell with its position
 #[derive(Component)]
-pub struct GridCell;
+pub struct GridCell {
+    pub pos: GridPos,
+}
 
 /// Links a sprite to its snake entity and segment index
 #[derive(Component)]
@@ -25,6 +27,7 @@ pub struct AliveText;
 const COLOR_GRID_A: Color = Color::srgb(0.15, 0.15, 0.18);
 const COLOR_GRID_B: Color = Color::srgb(0.17, 0.17, 0.20);
 const COLOR_WALL: Color = Color::srgb(0.35, 0.3, 0.2);
+const COLOR_DANGER: Color = Color::srgb(0.5, 0.15, 0.1); // red-ish danger zone
 const COLOR_FOOD: Color = Color::srgb(1.0, 0.85, 0.2);
 const COLOR_DEAD: Color = Color::srgb(0.3, 0.3, 0.3);
 
@@ -47,7 +50,7 @@ pub fn spawn_grid(mut commands: Commands) {
             commands.spawn((
                 Sprite::from_color(color, Vec2::splat(cell_visual)),
                 Transform::from_translation(pos.to_world().extend(0.0)),
-                GridCell,
+                GridCell { pos },
             ));
         }
     }
@@ -217,6 +220,85 @@ pub fn camera_follow(
     let smoothed = current.lerp(target, 0.1);
     cam_transform.translation.x = smoothed.x;
     cam_transform.translation.y = smoothed.y;
+}
+
+/// Update grid cell colors based on current arena bounds
+pub fn update_grid_cells(
+    bounds: Res<ArenaBounds>,
+    mut cell_query: Query<(&GridCell, &mut Sprite)>,
+) {
+    if !bounds.is_changed() {
+        return;
+    }
+
+    let default = ArenaBounds::default();
+    let has_shrunk = bounds.min_x > default.min_x;
+
+    for (cell, mut sprite) in &mut cell_query {
+        let pos = cell.pos;
+        let is_outer_border = pos.x == 0 || pos.y == 0 || pos.x == GRID_WIDTH - 1 || pos.y == GRID_HEIGHT - 1;
+
+        if is_outer_border {
+            sprite.color = COLOR_WALL;
+        } else if !bounds.contains(pos) {
+            // Outside current arena = wall
+            sprite.color = COLOR_WALL;
+        } else if has_shrunk && bounds.wall_distance(pos) <= 1 {
+            // Danger zone: only show after arena has started shrinking
+            sprite.color = COLOR_DANGER;
+        } else if (pos.x + pos.y) % 2 == 0 {
+            sprite.color = COLOR_GRID_A;
+        } else {
+            sprite.color = COLOR_GRID_B;
+        }
+    }
+}
+
+/// Marker for start prompt UI
+#[derive(Component)]
+pub struct StartPrompt;
+
+/// Show "press arrow to start" prompt
+pub fn show_start_prompt(mut commands: Commands) {
+    commands.spawn((
+        Node {
+            width: Val::Percent(100.0),
+            height: Val::Percent(100.0),
+            justify_content: JustifyContent::Center,
+            align_items: AlignItems::Center,
+            flex_direction: FlexDirection::Column,
+            row_gap: Val::Px(15.0),
+            ..default()
+        },
+        StartPrompt,
+    )).with_children(|parent| {
+        parent.spawn((
+            Text::new("DOGEBREAD SNAKE"),
+            TextFont {
+                font_size: 40.0,
+                ..default()
+            },
+            TextColor(COLOR_FOOD),
+        ));
+        parent.spawn((
+            Text::new("Press arrow key to start"),
+            TextFont {
+                font_size: 22.0,
+                ..default()
+            },
+            TextColor(Color::srgb(0.7, 0.7, 0.7)),
+        ));
+    });
+}
+
+/// Remove start prompt
+pub fn hide_start_prompt(
+    mut commands: Commands,
+    query: Query<Entity, With<StartPrompt>>,
+) {
+    for entity in &query {
+        commands.entity(entity).despawn();
+    }
 }
 
 /// Marker for game over UI overlay
