@@ -1,0 +1,7 @@
+[workspace]
+members = ["shared", "client", "server"]
+resolver = "2"
+
+[workspace.dependencies]
+bevy = "0.18"
+serde = { version = "1", features = ["derive"] }
