@@ -24,6 +24,7 @@ pub struct AliveText;
 // Colors
 const COLOR_GRID_A: Color = Color::srgb(0.15, 0.15, 0.18);
 const COLOR_GRID_B: Color = Color::srgb(0.17, 0.17, 0.20);
+const COLOR_WALL: Color = Color::srgb(0.35, 0.3, 0.2);
 const COLOR_FOOD: Color = Color::srgb(1.0, 0.85, 0.2);
 const COLOR_DEAD: Color = Color::srgb(0.3, 0.3, 0.3);
 
@@ -35,7 +36,10 @@ pub fn spawn_grid(mut commands: Commands) {
     for x in 0..GRID_WIDTH {
         for y in 0..GRID_HEIGHT {
             let pos = GridPos::new(x, y);
-            let color = if (x + y) % 2 == 0 {
+            let is_border = x == 0 || y == 0 || x == GRID_WIDTH - 1 || y == GRID_HEIGHT - 1;
+            let color = if is_border {
+                COLOR_WALL
+            } else if (x + y) % 2 == 0 {
                 COLOR_GRID_A
             } else {
                 COLOR_GRID_B

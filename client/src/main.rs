@@ -254,7 +254,7 @@ fn game_tick(
             // Find which snake ate it and grow them
             for (_, mut snake, _) in &mut snake_query {
                 if snake.alive && snake.head() == food.pos {
-                    snake.grow_pending += 1;
+                    snake.grow_pending += 2;
                 }
             }
         }

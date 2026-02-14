@@ -62,8 +62,9 @@ impl GridPos {
         )
     }
 
+    /// Check if position is within playable area (inside the border walls)
     pub fn in_bounds(self) -> bool {
-        self.x >= 0 && self.x < GRID_WIDTH && self.y >= 0 && self.y < GRID_HEIGHT
+        self.x >= 1 && self.x < GRID_WIDTH - 1 && self.y >= 1 && self.y < GRID_HEIGHT - 1
     }
 
     /// Manhattan distance to another position
