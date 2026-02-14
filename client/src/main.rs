@@ -95,11 +95,12 @@ fn main() {
             rendering::render_food,
             rendering::update_alive_text,
             rendering::update_grid_cells,
+            rendering::update_minimap,
             rendering::camera_follow,
             update_timer_text,
             cleanup_dead_snakes,
-            auto_screenshot,
         ))
+        .add_systems(Update, auto_screenshot)
         .run();
 }
 

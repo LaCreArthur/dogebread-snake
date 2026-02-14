@@ -27,6 +27,20 @@ pub struct AliveText;
 #[derive(Component)]
 pub struct TimerText;
 
+/// Marker for the minimap container
+#[derive(Component)]
+pub struct MinimapContainer;
+
+/// Minimap dot representing a snake
+#[derive(Component)]
+pub struct MinimapDot {
+    pub snake_id: SnakeId,
+}
+
+const MINIMAP_SIZE: f32 = 130.0;
+const MINIMAP_DOT: f32 = 5.0;
+const MINIMAP_MARGIN: f32 = 10.0;
+
 // Colors
 const COLOR_GRID_A: Color = Color::srgb(0.15, 0.15, 0.18);
 const COLOR_GRID_B: Color = Color::srgb(0.17, 0.17, 0.20);
@@ -94,6 +108,20 @@ pub fn spawn_ui(mut commands: Commands) {
             ..default()
         },
         TimerText,
+    ));
+
+    // Minimap (bottom-right)
+    commands.spawn((
+        Node {
+            position_type: PositionType::Absolute,
+            bottom: Val::Px(MINIMAP_MARGIN),
+            right: Val::Px(MINIMAP_MARGIN),
+            width: Val::Px(MINIMAP_SIZE),
+            height: Val::Px(MINIMAP_SIZE),
+            ..default()
+        },
+        BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.5)),
+        MinimapContainer,
     ));
 }
 
@@ -269,6 +297,77 @@ pub fn camera_follow(
     let smoothed = current.lerp(target, 0.08);
     cam_transform.translation.x = smoothed.x;
     cam_transform.translation.y = smoothed.y;
+}
+
+/// Update minimap dots to show snake positions
+pub fn update_minimap(
+    mut commands: Commands,
+    snake_query: Query<(&Snake, &SnakeColor, &SnakeId)>,
+    mut dot_query: Query<(Entity, &MinimapDot, &mut Node, &mut BackgroundColor)>,
+    minimap_query: Query<Entity, With<MinimapContainer>>,
+    bounds: Res<ArenaBounds>,
+) {
+    let Ok(minimap_entity) = minimap_query.single() else {
+        return;
+    };
+
+    // Remove dots for snakes that no longer exist
+    let alive_ids: Vec<SnakeId> = snake_query.iter()
+        .filter(|(s, _, _)| s.alive)
+        .map(|(_, _, id)| *id)
+        .collect();
+
+    for (entity, dot, _, _) in &dot_query {
+        if !alive_ids.contains(&dot.snake_id) {
+            commands.entity(entity).despawn();
+        }
+    }
+
+    // Minimap coordinate scale
+    let scale_x = MINIMAP_SIZE / GRID_WIDTH as f32;
+    let scale_y = MINIMAP_SIZE / GRID_HEIGHT as f32;
+
+    // Draw arena bounds outline as a border hint
+    let bounds_x = bounds.min_x as f32 * scale_x;
+    let bounds_y = (GRID_HEIGHT - bounds.max_y) as f32 * scale_y;
+    let bounds_w = (bounds.max_x - bounds.min_x) as f32 * scale_x;
+    let bounds_h = (bounds.max_y - bounds.min_y) as f32 * scale_y;
+    let _ = (bounds_x, bounds_y, bounds_w, bounds_h); // future: draw arena outline
+
+    for (snake, color, id) in &snake_query {
+        if !snake.alive {
+            continue;
+        }
+
+        let head = snake.head();
+        // Convert grid pos to minimap pos (y is flipped: grid y=0 is bottom, UI y=0 is top)
+        let mx = head.x as f32 * scale_x;
+        let my = (GRID_HEIGHT - 1 - head.y) as f32 * scale_y;
+
+        // Check if dot already exists for this snake
+        let existing = dot_query.iter_mut().find(|(_, d, _, _)| d.snake_id == *id);
+
+        if let Some((_, _, mut node, mut bg_color)) = existing {
+            node.left = Val::Px(mx);
+            node.top = Val::Px(my);
+            bg_color.0 = color.head;
+        } else {
+            // Spawn new dot as child of minimap
+            let dot_entity = commands.spawn((
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: Val::Px(mx),
+                    top: Val::Px(my),
+                    width: Val::Px(MINIMAP_DOT),
+                    height: Val::Px(MINIMAP_DOT),
+                    ..default()
+                },
+                BackgroundColor(color.head),
+                MinimapDot { snake_id: *id },
+            )).id();
+            commands.entity(minimap_entity).add_child(dot_entity);
+        }
+    }
 }
 
 /// Update grid cell colors based on current arena bounds
