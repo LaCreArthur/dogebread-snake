@@ -208,15 +208,24 @@ pub fn render_food(
     }
 }
 
-/// Update alive count display
+/// Update alive count and player score display
 pub fn update_alive_text(
     match_state: Res<MatchState>,
     mut text_query: Query<&mut Text, With<AliveText>>,
+    player_query: Query<&Snake, With<PlayerControlled>>,
 ) {
     let Ok(mut text) = text_query.single_mut() else {
         return;
     };
-    **text = format!("Alive: {} / {}", match_state.alive_count, match_state.total_snakes);
+    if let Ok(player) = player_query.single() {
+        **text = format!(
+            "Alive: {} / {}  |  Score: {}  Kills: {}",
+            match_state.alive_count, match_state.total_snakes,
+            player.score, player.kills
+        );
+    } else {
+        **text = format!("Alive: {} / {}", match_state.alive_count, match_state.total_snakes);
+    }
 }
 
 /// Camera follows the player's snake head

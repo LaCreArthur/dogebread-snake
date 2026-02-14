@@ -185,51 +185,73 @@ fn game_tick(
         })
         .collect();
 
-    // Step 3: Check collisions
-    let mut kills: Vec<Entity> = Vec::new();
+    // Step 3: Check collisions — track (victim_entity, killer_id)
+    let mut kills: Vec<(Entity, Option<SnakeId>)> = Vec::new();
 
     for (entity, my_id, head) in &new_heads {
-        // Wall collision (uses dynamic arena bounds)
+        // Wall collision
         if !bounds.contains(*head) {
-            kills.push(*entity);
+            kills.push((*entity, None));
             continue;
         }
 
         // Self collision
         if let Ok((_, snake, _)) = snake_query.get(*entity) {
             if snake.self_collision() {
-                kills.push(*entity);
+                kills.push((*entity, None));
                 continue;
             }
         }
 
-        // Head hits another snake's body
+        // Head hits another snake's body → body owner gets kill credit
         for (other_id, body_segments) in &body_map {
             if *other_id == *my_id {
                 continue;
             }
             if body_segments.iter().any(|s| *s == *head) {
-                kills.push(*entity);
+                kills.push((*entity, Some(*other_id)));
                 break;
             }
         }
 
-        // Head-to-head collision (both die)
+        // Head-to-head collision (both die, no kill credit)
         for (other_entity, other_id, other_head) in &new_heads {
             if *other_id == *my_id {
                 continue;
             }
             if *head == *other_head {
-                kills.push(*entity);
-                kills.push(*other_entity);
+                kills.push((*entity, None));
+                kills.push((*other_entity, None));
+            }
+        }
+    }
+
+    // Deduplicate by entity (keep first occurrence)
+    let mut seen = Vec::new();
+    let mut unique_kills = Vec::new();
+    for (entity, killer) in &kills {
+        if !seen.contains(entity) {
+            seen.push(*entity);
+            unique_kills.push((*entity, *killer));
+        }
+    }
+
+    // Credit kills to killers
+    let kill_credits: Vec<SnakeId> = unique_kills
+        .iter()
+        .filter_map(|(_, killer)| *killer)
+        .collect();
+
+    for killer_id in &kill_credits {
+        for (_, mut snake, id) in &mut snake_query {
+            if *id == *killer_id {
+                snake.kills += 1;
             }
         }
     }
 
     // Apply deaths
-    kills.sort();
-    kills.dedup();
-    for entity in &kills {
+    for (entity, _) in &unique_kills {
         if let Ok((_, mut snake, _)) = snake_query.get_mut(*entity) {
             if snake.alive {
                 snake.alive = false;
