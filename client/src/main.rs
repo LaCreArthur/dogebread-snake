@@ -8,7 +8,7 @@ use shared::constants::*;
 use shared::game::*;
 
 const NUM_SNAKES: u32 = 4; // 1 player + 3 AI
-const NUM_FOOD: usize = 8;
+const NUM_FOOD: usize = 12;
 const ARENA_SHRINK_INTERVAL: f32 = 12.0; // seconds between each shrink
 const SPEED_INCREASE_INTERVAL: f32 = 20.0; // seconds between speed bumps
 
@@ -96,23 +96,24 @@ fn main() {
             rendering::update_alive_text,
             rendering::update_grid_cells,
             rendering::camera_follow,
+            update_timer_text,
             cleanup_dead_snakes,
             auto_screenshot,
         ))
         .run();
 }
 
-/// Spawn positions for snakes — corners, heading along walls (not toward center)
+/// Spawn positions for snakes — corners + midpoints, heading along walls
 fn spawn_positions() -> Vec<(i32, i32, Direction)> {
     vec![
-        (5, 5, Direction::Right),           // Player: bottom-left, heading right
-        (GRID_WIDTH - 6, 5, Direction::Up),        // AI 1: bottom-right, heading up
-        (5, GRID_HEIGHT - 6, Direction::Right),    // AI 2: top-left, heading right
-        (GRID_WIDTH - 6, GRID_HEIGHT - 6, Direction::Down), // AI 3: top-right, heading down
-        (GRID_WIDTH / 2, 5, Direction::Up),
-        (5, GRID_HEIGHT / 2, Direction::Right),
-        (GRID_WIDTH - 6, GRID_HEIGHT / 2, Direction::Left),
-        (GRID_WIDTH / 2, GRID_HEIGHT - 6, Direction::Down),
+        (6, 6, Direction::Right),                          // Player: bottom-left
+        (GRID_WIDTH - 7, 6, Direction::Up),                // AI 1: bottom-right
+        (6, GRID_HEIGHT - 7, Direction::Right),            // AI 2: top-left
+        (GRID_WIDTH - 7, GRID_HEIGHT - 7, Direction::Down), // AI 3: top-right
+        (GRID_WIDTH / 2, 6, Direction::Up),                // midpoint-bottom
+        (6, GRID_HEIGHT / 2, Direction::Right),            // midpoint-left
+        (GRID_WIDTH - 7, GRID_HEIGHT / 2, Direction::Left), // midpoint-right
+        (GRID_WIDTH / 2, GRID_HEIGHT - 7, Direction::Down), // midpoint-top
     ]
 }
 
@@ -279,6 +280,7 @@ fn game_tick(
             for (_, mut snake, _) in &mut snake_query {
                 if snake.alive && snake.head() == food.pos {
                     snake.grow_pending += 2;
+                    snake.score += 1;
                 }
             }
         }
@@ -440,6 +442,7 @@ fn arena_shrink(
     mut shrink_timer: ResMut<ArenaShrinkTimer>,
     mut bounds: ResMut<ArenaBounds>,
     mut snake_query: Query<(Entity, &mut Snake)>,
+    food_query: Query<(Entity, &Food)>,
 ) {
     shrink_timer.timer.tick(time.delta());
     if !shrink_timer.timer.just_finished() {
@@ -462,6 +465,13 @@ fn arena_shrink(
             commands.entity(entity).insert(DeathTimer {
                 timer: Timer::from_seconds(2.0, TimerMode::Once),
             });
+        }
+    }
+
+    // Remove food outside new bounds
+    for (entity, food) in &food_query {
+        if !bounds.contains(food.pos) {
+            commands.entity(entity).despawn();
         }
     }
 }
@@ -489,6 +499,20 @@ fn track_match_time(
     mut match_timer: ResMut<MatchTimer>,
 ) {
     match_timer.elapsed += time.delta_secs();
+}
+
+/// Update the timer display
+fn update_timer_text(
+    match_timer: Res<MatchTimer>,
+    mut text_query: Query<&mut Text, With<rendering::TimerText>>,
+) {
+    let Ok(mut text) = text_query.single_mut() else {
+        return;
+    };
+    let secs = match_timer.elapsed as u32;
+    let mins = secs / 60;
+    let secs = secs % 60;
+    **text = format!("{}:{:02}", mins, secs);
 }
 
 /// Auto-screenshot resource (enable with AUTO_SCREENSHOT=1 env var)

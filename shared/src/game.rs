@@ -124,6 +124,8 @@ pub struct Snake {
     pub next_direction: Direction,
     pub alive: bool,
     pub grow_pending: usize,
+    pub score: u32,
+    pub kills: u32,
 }
 
 impl Snake {
@@ -142,6 +144,8 @@ impl Snake {
             next_direction: direction,
             alive: true,
             grow_pending: 0,
+            score: 0,
+            kills: 0,
         }
     }
 

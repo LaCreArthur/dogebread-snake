@@ -23,6 +23,10 @@ pub struct FoodSprite;
 #[derive(Component)]
 pub struct AliveText;
 
+/// Marker for the match timer text
+#[derive(Component)]
+pub struct TimerText;
+
 // Colors
 const COLOR_GRID_A: Color = Color::srgb(0.15, 0.15, 0.18);
 const COLOR_GRID_B: Color = Color::srgb(0.17, 0.17, 0.20);
@@ -56,8 +60,9 @@ pub fn spawn_grid(mut commands: Commands) {
     }
 }
 
-/// Spawn alive count UI
+/// Spawn HUD elements
 pub fn spawn_ui(mut commands: Commands) {
+    // Alive count (top-left)
     commands.spawn((
         Text::new("Alive: 0 / 0"),
         TextFont {
@@ -72,6 +77,23 @@ pub fn spawn_ui(mut commands: Commands) {
             ..default()
         },
         AliveText,
+    ));
+
+    // Match timer (top-right)
+    commands.spawn((
+        Text::new("0:00"),
+        TextFont {
+            font_size: 22.0,
+            ..default()
+        },
+        TextColor(Color::srgb(0.7, 0.7, 0.7)),
+        Node {
+            position_type: PositionType::Absolute,
+            top: Val::Px(10.0),
+            right: Val::Px(10.0),
+            ..default()
+        },
+        TimerText,
     ));
 }
 
@@ -305,42 +327,59 @@ pub fn hide_start_prompt(
 #[derive(Component)]
 pub struct GameOverOverlay;
 
-/// Show game over screen
+fn snake_color_name(id: u32) -> &'static str {
+    match id % 8 {
+        0 => "Gold",
+        1 => "Green",
+        2 => "Red",
+        3 => "Blue",
+        4 => "Pink",
+        5 => "Cyan",
+        6 => "Orange",
+        7 => "Lavender",
+        _ => "???",
+    }
+}
+
+/// Show game over screen with scores
 pub fn show_game_over(
     mut commands: Commands,
     existing: Query<Entity, With<GameOverOverlay>>,
     snake_query: Query<(&Snake, &SnakeColor, &SnakeId)>,
 ) {
-    // Don't spawn if already exists
     if !existing.is_empty() {
         return;
     }
 
-    // Find winner (last alive, or if all dead, none)
+    // Find winner
     let winner = snake_query.iter().find(|(s, _, _)| s.alive);
-    let winner_text = if let Some((_snake, _color, id)) = winner {
-        let name = match id.0 {
-            0 => "You win!".to_string(),
-            _ => {
-                let color_name = match id.0 {
-                    1 => "Green",
-                    2 => "Red",
-                    3 => "Blue",
-                    4 => "Pink",
-                    5 => "Cyan",
-                    6 => "Orange",
-                    7 => "Lavender",
-                    _ => "???",
-                };
-                format!("{} snake wins!", color_name)
-            }
-        };
-        name
+    let winner_text = if let Some((_, _, id)) = winner {
+        if id.0 == 0 {
+            "You win!".to_string()
+        } else {
+            format!("{} snake wins!", snake_color_name(id.0))
+        }
     } else {
         "Draw!".to_string()
     };
 
-    // Spawn overlay
+    // Build scoreboard sorted by score descending
+    let mut scores: Vec<(u32, u32, u32, bool)> = snake_query
+        .iter()
+        .map(|(s, _, id)| (id.0, s.score, s.kills, s.alive))
+        .collect();
+    scores.sort_by(|a, b| b.1.cmp(&a.1).then(b.2.cmp(&a.2)));
+
+    let scoreboard: String = scores
+        .iter()
+        .map(|(id, score, kills, alive)| {
+            let name = if *id == 0 { "You" } else { snake_color_name(*id) };
+            let status = if *alive { " *" } else { "" };
+            format!("{}  -  {} food, {} kills{}", name, score, kills, status)
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
     commands.spawn((
         Node {
             width: Val::Percent(100.0),
@@ -348,7 +387,7 @@ pub fn show_game_over(
             justify_content: JustifyContent::Center,
             align_items: AlignItems::Center,
             flex_direction: FlexDirection::Column,
-            row_gap: Val::Px(20.0),
+            row_gap: Val::Px(15.0),
             ..default()
         },
         BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.7)),
@@ -356,26 +395,22 @@ pub fn show_game_over(
     )).with_children(|parent| {
         parent.spawn((
             Text::new("GAME OVER"),
-            TextFont {
-                font_size: 48.0,
-                ..default()
-            },
+            TextFont { font_size: 48.0, ..default() },
             TextColor(COLOR_FOOD),
         ));
         parent.spawn((
             Text::new(winner_text),
-            TextFont {
-                font_size: 32.0,
-                ..default()
-            },
+            TextFont { font_size: 32.0, ..default() },
             TextColor(Color::WHITE),
         ));
         parent.spawn((
+            Text::new(scoreboard),
+            TextFont { font_size: 18.0, ..default() },
+            TextColor(Color::srgb(0.8, 0.8, 0.8)),
+        ));
+        parent.spawn((
             Text::new("Press SPACE to restart"),
-            TextFont {
-                font_size: 20.0,
-                ..default()
-            },
+            TextFont { font_size: 20.0, ..default() },
             TextColor(Color::srgb(0.6, 0.6, 0.6)),
         ));
     });
