@@ -8,7 +8,7 @@ use shared::constants::*;
 use shared::game::*;
 
 const NUM_SNAKES: u32 = 4; // 1 player + 3 AI
-const NUM_FOOD: usize = 5;
+const NUM_FOOD: usize = 8;
 
 /// Timer resource for tick-based movement
 #[derive(Resource)]
@@ -71,7 +71,7 @@ fn main() {
             )
                 .run_if(in_state(GameState::Playing)),
         )
-        .add_systems(Update, restart_on_space)
+        .add_systems(Update, (restart_on_space, cleanup_dead_snakes))
         .add_systems(OnEnter(GameState::GameOver), rendering::show_game_over)
         .add_systems(OnExit(GameState::GameOver), rendering::hide_game_over)
         .add_systems(Update, restart_on_space.run_if(in_state(GameState::GameOver)))
@@ -206,7 +206,12 @@ fn game_tick(
     kills.dedup();
     for entity in &kills {
         if let Ok((_, mut snake, _)) = snake_query.get_mut(*entity) {
-            snake.alive = false;
+            if snake.alive {
+                snake.alive = false;
+                commands.entity(*entity).insert(DeathTimer {
+                    timer: Timer::from_seconds(2.0, TimerMode::Once),
+                });
+            }
         }
     }
 
@@ -330,6 +335,28 @@ fn restart_on_space(
     match_state.total_snakes = NUM_SNAKES;
     match_state.alive_count = NUM_SNAKES;
     next_state.set(GameState::Playing);
+}
+
+/// Clean up dead snake bodies after their death timer expires
+fn cleanup_dead_snakes(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut dead_query: Query<(Entity, &mut DeathTimer)>,
+    segment_query: Query<(Entity, &rendering::SnakeSegmentSprite)>,
+) {
+    for (snake_entity, mut death_timer) in &mut dead_query {
+        death_timer.timer.tick(time.delta());
+        if death_timer.timer.just_finished() {
+            // Remove all segment sprites for this snake
+            for (seg_entity, seg) in &segment_query {
+                if seg.snake_entity == snake_entity {
+                    commands.entity(seg_entity).despawn();
+                }
+            }
+            // Remove the snake entity itself
+            commands.entity(snake_entity).despawn();
+        }
+    }
 }
 
 /// Auto-screenshot resource (enable with AUTO_SCREENSHOT=1 env var)

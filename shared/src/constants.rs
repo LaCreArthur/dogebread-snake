@@ -12,7 +12,7 @@ pub const TICK_RATE: f64 = 8.0;
 pub const TICK_INTERVAL: f64 = 1.0 / TICK_RATE;
 
 /// Initial snake length
-pub const INITIAL_SNAKE_LENGTH: usize = 3;
+pub const INITIAL_SNAKE_LENGTH: usize = 5;
 
 /// Respawn delay in seconds
 pub const RESPAWN_DELAY: f32 = 3.0;

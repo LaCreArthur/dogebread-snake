@@ -234,10 +234,22 @@ pub fn show_game_over(
     let winner = snake_query.iter().find(|(s, _, _)| s.alive);
     let winner_text = if let Some((_snake, _color, id)) = winner {
         let name = match id.0 {
-            0 => "You",
-            n => &format!("Snake {}", n),
+            0 => "You win!".to_string(),
+            _ => {
+                let color_name = match id.0 {
+                    1 => "Green",
+                    2 => "Red",
+                    3 => "Blue",
+                    4 => "Pink",
+                    5 => "Cyan",
+                    6 => "Orange",
+                    7 => "Lavender",
+                    _ => "???",
+                };
+                format!("{} snake wins!", color_name)
+            }
         };
-        format!("{} wins!", name)
+        name
     } else {
         "Draw!".to_string()
     };

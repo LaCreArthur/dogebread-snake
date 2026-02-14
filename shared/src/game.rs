@@ -214,3 +214,9 @@ pub struct MatchState {
     pub alive_count: u32,
     pub total_snakes: u32,
 }
+
+/// Timer for dead snake body cleanup
+#[derive(Component)]
+pub struct DeathTimer {
+    pub timer: bevy::time::Timer,
+}
