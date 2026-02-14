@@ -33,7 +33,7 @@ const COLOR_GRID_B: Color = Color::srgb(0.17, 0.17, 0.20);
 const COLOR_WALL: Color = Color::srgb(0.35, 0.3, 0.2);
 const COLOR_DANGER: Color = Color::srgb(0.5, 0.15, 0.1); // red-ish danger zone
 const COLOR_FOOD: Color = Color::srgb(1.0, 0.85, 0.2);
-const COLOR_DEAD: Color = Color::srgb(0.3, 0.3, 0.3);
+
 
 /// Spawn the grid background
 pub fn spawn_grid(mut commands: Commands) {
@@ -100,14 +100,14 @@ pub fn spawn_ui(mut commands: Commands) {
 /// Sync all snake entities to their sprite representations
 pub fn render_snakes(
     mut commands: Commands,
-    snake_query: Query<(Entity, &Snake, &SnakeColor)>,
+    snake_query: Query<(Entity, &Snake, &SnakeColor, Option<&DeathTimer>)>,
     mut segment_query: Query<(Entity, &mut Transform, &mut Sprite, &SnakeSegmentSprite)>,
 ) {
     // Build a set of alive snake entities for cleanup
-    let alive_snake_entities: Vec<Entity> = snake_query.iter().map(|(e, _, _)| e).collect();
+    let alive_snake_entities: Vec<Entity> = snake_query.iter().map(|(e, _, _, _)| e).collect();
 
     // For each snake, update/spawn/despawn its segments
-    for (snake_entity, snake, color) in &snake_query {
+    for (snake_entity, snake, color, _) in &snake_query {
         // Count existing segments for this snake
         let existing: Vec<(Entity, usize)> = segment_query
             .iter()
@@ -150,7 +150,7 @@ pub fn render_snakes(
             continue;
         }
 
-        let Ok((_, snake, color)) = snake_query.get(seg.snake_entity) else {
+        let Ok((_, snake, color, death_timer)) = snake_query.get(seg.snake_entity) else {
             continue;
         };
 
@@ -158,13 +158,22 @@ pub fn render_snakes(
             let pos = snake.segments[seg.index];
             transform.translation = pos.to_world().extend(if seg.index == 0 { 2.0 } else { 1.0 });
 
-            sprite.color = if !snake.alive {
-                COLOR_DEAD
+            if !snake.alive {
+                // Dead: blink between gray and transparent
+                let blink = if let Some(dt) = death_timer {
+                    let t = dt.timer.fraction();
+                    // Fast blink that fades out
+                    let alpha = (1.0 - t) * ((t * 12.0).sin() * 0.5 + 0.5);
+                    alpha
+                } else {
+                    0.5
+                };
+                sprite.color = Color::srgba(0.4, 0.4, 0.4, blink);
             } else if seg.index == 0 {
-                color.head
+                sprite.color = color.head;
             } else {
-                color.body
-            };
+                sprite.color = color.body;
+            }
 
             // Head is slightly larger
             if seg.index == 0 {
@@ -228,27 +237,36 @@ pub fn update_alive_text(
     }
 }
 
-/// Camera follows the player's snake head
+/// Camera follows the player's snake head during gameplay, centers during menus
 pub fn camera_follow(
     player_query: Query<&Snake, With<PlayerControlled>>,
     mut camera_query: Query<&mut Transform, With<Camera2d>>,
+    state: Res<State<GameState>>,
 ) {
     let Ok(mut cam_transform) = camera_query.single_mut() else {
         return;
     };
 
-    let Ok(snake) = player_query.single() else {
-        return;
-    };
-
-    let target = if snake.alive {
-        snake.head().to_world()
-    } else {
-        Vec2::ZERO
+    let target = match state.get() {
+        GameState::WaitingToStart | GameState::GameOver => {
+            // Center on grid
+            Vec2::ZERO
+        }
+        GameState::Playing => {
+            if let Ok(snake) = player_query.single() {
+                if snake.alive {
+                    snake.head().to_world()
+                } else {
+                    Vec2::ZERO
+                }
+            } else {
+                Vec2::ZERO
+            }
+        }
     };
 
     let current = cam_transform.translation.truncate();
-    let smoothed = current.lerp(target, 0.1);
+    let smoothed = current.lerp(target, 0.08);
     cam_transform.translation.x = smoothed.x;
     cam_transform.translation.y = smoothed.y;
 }
