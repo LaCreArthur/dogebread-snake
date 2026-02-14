@@ -32,25 +32,38 @@ pub fn handle_input(
     }
 }
 
-/// Simple AI: avoid walls and other snakes, chase food
+/// AI personality affects decision-making
+enum AiPersonality {
+    Hungry,     // Prioritizes food
+    Cautious,   // Stays far from walls and snakes
+    Aggressive, // Tries to get near other snake heads (cut them off)
+}
+
+fn personality_for(id: u32) -> AiPersonality {
+    match id % 3 {
+        0 => AiPersonality::Hungry,
+        1 => AiPersonality::Cautious,
+        _ => AiPersonality::Aggressive,
+    }
+}
+
+/// AI with varied personalities: avoid obstacles, chase objectives
 pub fn ai_tick(
     mut ai_query: Query<(&mut Snake, &SnakeId), With<AiControlled>>,
     non_ai_snakes: Query<(&Snake, &SnakeId), Without<AiControlled>>,
     food_query: Query<&Food>,
     bounds: Res<ArenaBounds>,
 ) {
-    // Collect segments from all snakes for collision avoidance
-    // First collect from non-AI snakes (separate query)
-    let mut snake_data: Vec<(SnakeId, Vec<GridPos>)> = non_ai_snakes
+    // Collect all snake data for collision avoidance
+    let mut snake_data: Vec<(SnakeId, Vec<GridPos>, GridPos)> = non_ai_snakes
         .iter()
         .filter(|(s, _)| s.alive)
-        .map(|(s, id)| (*id, s.segments.iter().copied().collect()))
+        .map(|(s, id)| (*id, s.segments.iter().copied().collect(), s.head()))
         .collect();
 
-    // Also collect from AI snakes (same query, readonly access via iter)
     for (s, id) in ai_query.iter() {
         if s.alive {
-            snake_data.push((*id, s.segments.iter().copied().collect()));
+            snake_data.push((*id, s.segments.iter().copied().collect(), s.head()));
         }
     }
 
@@ -62,13 +75,12 @@ pub fn ai_tick(
         }
 
         let head = snake.head();
+        let personality = personality_for(my_id.0);
 
-        // Score each direction
         let mut best_dir = snake.direction;
         let mut best_score = i32::MIN;
 
         for dir in Direction::ALL {
-            // Can't reverse
             if dir == snake.direction.opposite() {
                 continue;
             }
@@ -76,47 +88,101 @@ pub fn ai_tick(
             let delta = dir.delta();
             let next = GridPos::new(head.x + delta.x, head.y + delta.y);
 
-            // Wall = death (use dynamic arena bounds)
             if !bounds.contains(next) {
                 continue;
             }
 
             // Check collision with any snake body
             let mut blocked = false;
-            for (sid, segments) in &snake_data {
+            for (sid, segments, _) in &snake_data {
                 if *sid == *my_id {
-                    // Self: skip head (index 0), check body
                     if segments.iter().skip(1).any(|s| *s == next) {
                         blocked = true;
                         break;
                     }
-                } else {
-                    // Other snakes: any segment is danger
-                    if segments.iter().any(|s| *s == next) {
-                        blocked = true;
-                        break;
-                    }
+                } else if segments.iter().any(|s| *s == next) {
+                    blocked = true;
+                    break;
                 }
             }
             if blocked {
                 continue;
             }
 
-            // Score: prefer closer to food, prefer center-ish
-            let mut score = 0i32;
-
-            // Distance to nearest food (closer = better)
-            if let Some(nearest_food) = foods.iter().min_by_key(|f| f.distance(next)) {
-                score += 100 - nearest_food.distance(next);
+            // 2-step look-ahead: check if next position has at least 1 safe exit
+            let mut has_exit = false;
+            for exit_dir in Direction::ALL {
+                if exit_dir == dir.opposite() {
+                    continue;
+                }
+                let exit_delta = exit_dir.delta();
+                let exit_pos = GridPos::new(next.x + exit_delta.x, next.y + exit_delta.y);
+                if bounds.contains(exit_pos) {
+                    let exit_blocked = snake_data.iter().any(|(sid, segs, _)| {
+                        if *sid == *my_id {
+                            segs.iter().skip(1).any(|s| *s == exit_pos)
+                        } else {
+                            segs.iter().any(|s| *s == exit_pos)
+                        }
+                    });
+                    if !exit_blocked {
+                        has_exit = true;
+                        break;
+                    }
+                }
+            }
+            if !has_exit {
+                continue; // Dead end — avoid
             }
 
-            // Prefer staying away from walls (uses dynamic bounds)
-            let wall_dist = bounds.wall_distance(next);
-            score += wall_dist * 3;
+            let mut score = 0i32;
 
-            // Slight preference for keeping current direction (less jittery)
+            // Base: distance to nearest food
+            if let Some(nearest_food) = foods.iter().min_by_key(|f| f.distance(next)) {
+                let food_score = 100 - nearest_food.distance(next);
+                score += match personality {
+                    AiPersonality::Hungry => food_score * 2,
+                    AiPersonality::Cautious => food_score,
+                    AiPersonality::Aggressive => food_score / 2,
+                };
+            }
+
+            // Wall distance
+            let wall_dist = bounds.wall_distance(next);
+            score += match personality {
+                AiPersonality::Cautious => wall_dist * 5,
+                _ => wall_dist * 2,
+            };
+
+            // Aggressive: bonus for being near other snake heads (try to cut them off)
+            if matches!(personality, AiPersonality::Aggressive) {
+                for (sid, _, other_head) in &snake_data {
+                    if *sid == *my_id {
+                        continue;
+                    }
+                    let dist = next.distance(*other_head);
+                    if dist < 8 {
+                        score += (8 - dist) * 4; // Bonus for being near enemy heads
+                    }
+                }
+            }
+
+            // Cautious: penalty for being near any snake
+            if matches!(personality, AiPersonality::Cautious) {
+                for (sid, _, other_head) in &snake_data {
+                    if *sid == *my_id {
+                        continue;
+                    }
+                    let dist = next.distance(*other_head);
+                    if dist < 6 {
+                        score -= (6 - dist) * 3;
+                    }
+                }
+            }
+
+            // Slight preference for keeping current direction
             if dir == snake.direction {
-                score += 5;
+                score += 3;
             }
 
             if score > best_score {

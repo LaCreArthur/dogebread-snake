@@ -7,8 +7,8 @@ use bevy::render::view::screenshot::{save_to_disk, Screenshot};
 use shared::constants::*;
 use shared::game::*;
 
-const NUM_SNAKES: u32 = 4; // 1 player + 3 AI
-const NUM_FOOD: usize = 12;
+const NUM_SNAKES: u32 = 6; // 1 player + 5 AI
+const NUM_FOOD: usize = 15;
 const ARENA_SHRINK_INTERVAL: f32 = 12.0; // seconds between each shrink
 const SPEED_INCREASE_INTERVAL: f32 = 20.0; // seconds between speed bumps
 
