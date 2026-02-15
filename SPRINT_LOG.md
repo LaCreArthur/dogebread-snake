@@ -69,3 +69,17 @@
 - **Result:** success
 - **Changes:** 4d8ee54 — build-wasm.sh script, .gitignore for WASM artifacts (21 insertions)
 - **Notes:** WASM compiles in release mode. wasm-bindgen generates client.js (105K) + client_bg.wasm (73M). index.html import path matches. Local serving via python3 http.server verified. 73M WASM is large — needs wasm-opt or LTO for production.
+
+## Sprint 9 — 2026-02-15 12:50
+- **Task:** Screen shake scaling + auto-spectate strongest snake
+- **Model:** sonnet (parallel with Sprint 10)
+- **Result:** success
+- **Changes:** 027be6e — shake intensity scales with player kills (8.0 + kills*2.0, capped 20.0), auto-spectate follows strongest alive snake when player dead, "much spectate • following [Color] doge" text
+- **Notes:** Hit borrow checker: `cannot borrow snake_query as immutable because also borrowed as mutable`. Fixed by extracting player_kills count before mutable death processing loop. Unused variable warning fixed with `_entity` prefix.
+
+## Sprint 10 — 2026-02-15 12:50
+- **Task:** WASM size optimization — release profile + wasm-opt
+- **Model:** sonnet (parallel with Sprint 9)
+- **Result:** success
+- **Changes:** 13a7e02 — release profile (opt-level="z", lto=true, codegen-units=1, strip=true), wasm-opt -Oz in build-wasm.sh
+- **Notes:** WASM reduced from 73MB → 20MB (73% reduction). Still large — could disable unused Bevy features for further reduction.

@@ -38,8 +38,8 @@ A polished, juicy snake battle royale playable in-browser that feels like a real
 ### P2: Nice to Have
 - [ ] Full menu flow: Home → Play → Game → Leaderboard → Home
 - [ ] Doge sprites/assets (actual Doge head, coin pickups)
-- [ ] Screen shake intensity scales with kills
-- [ ] Spectate: auto-follow strongest remaining snake
+- [x] Screen shake intensity scales with kills (Sprint 9)
+- [x] Spectate: auto-follow strongest remaining snake (Sprint 9)
 - [ ] Match stats history (local storage in WASM)
 - [ ] Mobile touch controls (WASM)
 
