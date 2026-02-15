@@ -8,7 +8,7 @@ use shared::constants::*;
 use shared::game::*;
 
 const NUM_SNAKES: u32 = 6;
-const NUM_FOOD: usize = 15;
+const NUM_FOOD: usize = 25;
 const ARENA_SHRINK_INTERVAL: f32 = 12.0;
 const SPEED_INCREASE_INTERVAL: f32 = 20.0;
 
@@ -55,7 +55,7 @@ pub fn wasm_main() {
 pub fn run() {
     App::new()
         .add_plugins(DefaultPlugins.set(rendering::window_setup()))
-        .insert_resource(ClearColor(Color::srgb(0.1, 0.1, 0.13)))
+        .insert_resource(ClearColor(Color::srgb(0.10, 0.10, 0.18))) // DOGE_BACKGROUND
         .insert_resource(GameTick {
             timer: Timer::from_seconds(TICK_INTERVAL as f32, TimerMode::Repeating),
         })
@@ -110,14 +110,14 @@ pub fn run() {
 
 fn spawn_positions() -> Vec<(i32, i32, Direction)> {
     vec![
-        (6, 6, Direction::Right),
-        (GRID_WIDTH - 7, 6, Direction::Up),
-        (6, GRID_HEIGHT - 7, Direction::Right),
-        (GRID_WIDTH - 7, GRID_HEIGHT - 7, Direction::Down),
-        (GRID_WIDTH / 2, 6, Direction::Up),
-        (6, GRID_HEIGHT / 2, Direction::Right),
-        (GRID_WIDTH - 7, GRID_HEIGHT / 2, Direction::Left),
-        (GRID_WIDTH / 2, GRID_HEIGHT - 7, Direction::Down),
+        (10, 10, Direction::Right),
+        (GRID_WIDTH - 11, 10, Direction::Up),
+        (10, GRID_HEIGHT - 11, Direction::Right),
+        (GRID_WIDTH - 11, GRID_HEIGHT - 11, Direction::Down),
+        (GRID_WIDTH / 2, 10, Direction::Up),
+        (10, GRID_HEIGHT / 2, Direction::Right),
+        (GRID_WIDTH - 11, GRID_HEIGHT / 2, Direction::Left),
+        (GRID_WIDTH / 2, GRID_HEIGHT - 11, Direction::Down),
     ]
 }
 

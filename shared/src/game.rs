@@ -92,17 +92,17 @@ impl SnakeColor {
         }
     }
 
-    /// Predefined distinct snake colors
+    /// Doge-themed snake colors
     pub fn palette(index: u32) -> Self {
         match index % 8 {
-            0 => Self::new(0.95, 0.75, 0.1),  // Gold (player default)
-            1 => Self::new(0.2, 0.8, 0.4),    // Green
-            2 => Self::new(0.9, 0.3, 0.3),    // Red
-            3 => Self::new(0.3, 0.5, 0.95),   // Blue
-            4 => Self::new(0.9, 0.5, 0.9),    // Pink
-            5 => Self::new(0.1, 0.9, 0.9),    // Cyan
-            6 => Self::new(0.95, 0.55, 0.1),  // Orange
-            7 => Self::new(0.7, 0.7, 0.95),   // Lavender
+            0 => Self::new(0.91, 0.69, 0.29),  // Doge Gold (player)
+            1 => Self::new(0.4, 0.85, 0.5),    // Lime Green
+            2 => Self::new(0.95, 0.35, 0.35),  // Hot Red
+            3 => Self::new(0.35, 0.55, 0.98),  // Electric Blue
+            4 => Self::new(0.95, 0.45, 0.85),  // Hot Pink
+            5 => Self::new(0.2, 0.95, 0.95),   // Bright Cyan
+            6 => Self::new(0.98, 0.60, 0.15),  // Bright Orange
+            7 => Self::new(0.75, 0.65, 0.98),  // Soft Purple
             _ => unreachable!(),
         }
     }

@@ -1,5 +1,7 @@
 # Learnings — DogeBread Snake (Bevy 0.18 / Rust)
 
+[2026-02-15] #gamedev #theming: Visual theming is purely cosmetic — only modify rendering.rs constants and text, leave game logic untouched
+[2026-02-15] #gamedev #theming: Doge palette: #e8b04b gold, #1a1a2e background, bright saturated accent colors for AI snakes
 [2026-02-15] #bevy #api: Bevy 0.18 breaks heavily from 0.15 — always read migration guide first
 [2026-02-15] #bevy #api: EventWriter removed from prelude in 0.18; use std::process::exit as fallback
 [2026-02-15] #bevy #api: System tuples max 8 elements for .run_if() — split into multiple add_systems calls

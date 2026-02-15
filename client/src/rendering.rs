@@ -37,16 +37,17 @@ pub struct MinimapDot {
     pub snake_id: SnakeId,
 }
 
-const MINIMAP_SIZE: f32 = 130.0;
+const MINIMAP_SIZE: f32 = 150.0;
 const MINIMAP_DOT: f32 = 5.0;
 const MINIMAP_MARGIN: f32 = 10.0;
 
-// Colors
-const COLOR_GRID_A: Color = Color::srgb(0.15, 0.15, 0.18);
-const COLOR_GRID_B: Color = Color::srgb(0.17, 0.17, 0.20);
-const COLOR_WALL: Color = Color::srgb(0.35, 0.3, 0.2);
-const COLOR_DANGER: Color = Color::srgb(0.5, 0.15, 0.1); // red-ish danger zone
-const COLOR_FOOD: Color = Color::srgb(1.0, 0.85, 0.2);
+// Doge-inspired color palette
+const DOGE_GOLD: Color = Color::srgb(0.91, 0.69, 0.29); // #e8b04b
+const COLOR_GRID_A: Color = Color::srgb(0.12, 0.12, 0.20);
+const COLOR_GRID_B: Color = Color::srgb(0.14, 0.14, 0.22);
+const COLOR_WALL: Color = Color::srgb(0.58, 0.45, 0.20); // golden-brown border
+const COLOR_DANGER: Color = Color::srgb(0.85, 0.35, 0.15); // orange-red danger zone
+const COLOR_FOOD: Color = Color::srgb(0.95, 0.73, 0.20); // golden coin
 
 
 /// Spawn the grid background
@@ -78,12 +79,12 @@ pub fn spawn_grid(mut commands: Commands) {
 pub fn spawn_ui(mut commands: Commands) {
     // Alive count (top-left)
     commands.spawn((
-        Text::new("Alive: 0 / 0"),
+        Text::new("much alive: 0 / 0"),
         TextFont {
             font_size: 22.0,
             ..default()
         },
-        TextColor(COLOR_FOOD),
+        TextColor(DOGE_GOLD),
         Node {
             position_type: PositionType::Absolute,
             top: Val::Px(10.0),
@@ -231,8 +232,9 @@ pub fn render_food(
         if i < existing.len() {
             existing[i].1.translation = food.pos.to_world().extend(0.5);
         } else {
+            // Golden coins/treats (circular, bright)
             commands.spawn((
-                Sprite::from_color(COLOR_FOOD, Vec2::splat(CELL_SIZE - 4.0)),
+                Sprite::from_color(COLOR_FOOD, Vec2::splat(CELL_SIZE - 5.0)),
                 Transform::from_translation(food.pos.to_world().extend(0.5)),
                 FoodSprite,
             ));
@@ -256,12 +258,12 @@ pub fn update_alive_text(
     };
     if let Ok(player) = player_query.single() {
         **text = format!(
-            "Alive: {} / {}  |  Score: {}  Kills: {}",
+            "much alive: {} / {}  •  wow score: {}  •  kills: {}",
             match_state.alive_count, match_state.total_snakes,
             player.score, player.kills
         );
     } else {
-        **text = format!("Alive: {} / {}", match_state.alive_count, match_state.total_snakes);
+        **text = format!("much alive: {} / {}", match_state.alive_count, match_state.total_snakes);
     }
 }
 
@@ -422,9 +424,9 @@ pub fn update_spectating(
 
     if show && existing.is_empty() {
         commands.spawn((
-            Text::new("SPECTATING"),
+            Text::new("much spectate • wow"),
             TextFont { font_size: 28.0, ..default() },
-            TextColor(Color::srgba(1.0, 1.0, 1.0, 0.6)),
+            TextColor(Color::srgba(0.91, 0.69, 0.29, 0.7)),
             Node {
                 position_type: PositionType::Absolute,
                 bottom: Val::Px(MINIMAP_MARGIN + MINIMAP_SIZE + 10.0),
@@ -465,7 +467,15 @@ pub fn show_start_prompt(mut commands: Commands) {
                 font_size: 40.0,
                 ..default()
             },
-            TextColor(COLOR_FOOD),
+            TextColor(DOGE_GOLD),
+        ));
+        parent.spawn((
+            Text::new("such snake • very battle • wow"),
+            TextFont {
+                font_size: 18.0,
+                ..default()
+            },
+            TextColor(Color::srgb(0.7, 0.6, 0.4)),
         ));
         parent.spawn((
             Text::new("Press arrow key to start"),
@@ -473,7 +483,7 @@ pub fn show_start_prompt(mut commands: Commands) {
                 font_size: 22.0,
                 ..default()
             },
-            TextColor(Color::srgb(0.7, 0.7, 0.7)),
+            TextColor(Color::srgb(0.8, 0.8, 0.8)),
         ));
     });
 }
@@ -520,12 +530,12 @@ pub fn show_game_over(
     let winner = snake_query.iter().find(|(s, _, _)| s.alive);
     let winner_text = if let Some((_, _, id)) = winner {
         if id.0 == 0 {
-            "You win!".to_string()
+            "very victory! so win!".to_string()
         } else {
-            format!("{} snake wins!", snake_color_name(id.0))
+            format!("{} doge wins! much skill!", snake_color_name(id.0))
         }
     } else {
-        "Draw!".to_string()
+        "wow such draw!".to_string()
     };
 
     // Build scoreboard sorted by score descending
@@ -559,9 +569,9 @@ pub fn show_game_over(
         GameOverOverlay,
     )).with_children(|parent| {
         parent.spawn((
-            Text::new("GAME OVER"),
+            Text::new("such game over • wow"),
             TextFont { font_size: 48.0, ..default() },
-            TextColor(COLOR_FOOD),
+            TextColor(DOGE_GOLD),
         ));
         parent.spawn((
             Text::new(winner_text),
@@ -571,12 +581,12 @@ pub fn show_game_over(
         parent.spawn((
             Text::new(scoreboard),
             TextFont { font_size: 18.0, ..default() },
-            TextColor(Color::srgb(0.8, 0.8, 0.8)),
+            TextColor(Color::srgb(0.85, 0.85, 0.85)),
         ));
         parent.spawn((
-            Text::new("Press SPACE to restart"),
+            Text::new("Press SPACE for much restart"),
             TextFont { font_size: 20.0, ..default() },
-            TextColor(Color::srgb(0.6, 0.6, 0.6)),
+            TextColor(Color::srgb(0.7, 0.7, 0.7)),
         ));
     });
 }
@@ -596,7 +606,7 @@ pub fn window_setup() -> WindowPlugin {
     WindowPlugin {
         primary_window: Some(Window {
             title: "DogeBread Snake".to_string(),
-            resolution: (800, 700).into(),
+            resolution: (900, 780).into(),
             resizable: true,
             ..default()
         }),

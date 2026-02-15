@@ -1,9 +1,9 @@
 /// Grid dimensions (cells)
-pub const GRID_WIDTH: i32 = 40;
-pub const GRID_HEIGHT: i32 = 40;
+pub const GRID_WIDTH: i32 = 60;
+pub const GRID_HEIGHT: i32 = 60;
 
 /// Size of each cell in pixels
-pub const CELL_SIZE: f32 = 16.0;
+pub const CELL_SIZE: f32 = 12.0;
 
 /// Game tick rate (movements per second)
 pub const TICK_RATE: f64 = 8.0;
