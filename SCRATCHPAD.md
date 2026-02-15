@@ -1,25 +1,26 @@
 # Scratchpad
 
 ## Current State
-Playable 6-snake battle royale. Core mechanics solid. User QA verdict: "great first stage" but map too small and needs juice/UX feedback. Entity despawned warnings in console from dead snake cleanup race condition.
+ALL P0 COMPLETE. Juicy 6-snake battle royale with countdown, kill feed, screen shake, particles, food pulse, speed indicator, safe entity despawn, distinct snake heads. 60x60 grid, effects.rs module extracted.
 
-## Last Sprint (Pre-orchestration)
-10 manual commits building up from scratch to current state. Covered: snakes, AI, arena shrink, scoring, minimap, spectating, start/game over screens.
+## Last Sprint
+Sprint 4: Safe despawn (25 sites), bubble head, SPEED UP! text, effects.rs extraction.
 
-## Next Steps (Priority Order)
-1. **Bigger map** — increase grid to 60x60 with smaller cells or camera zoom. Most impactful single change.
-2. **Juice pass** — screen shake, score popups, food pulse, death particles. This is what separates "tech demo" from "game".
-3. **Countdown + kill feed** — UX essentials for battle royale feel.
-4. **Fix entity despawned warnings** — cleanup race condition.
-5. **Snake head distinction** — eyes or size to make head visually clear.
+## Next Steps (P1 — Should Have)
+1. **10 snakes** — increase NUM_SNAKES, add more spawn positions
+2. **Sound effects** — eat, die, kill, arena shrink, countdown
+3. **Player name entry** — text input before match
+4. **Better game over** — dramatic reveal, ranking animation
+5. **Camera zoom** — zoom out as arena shrinks
+6. **Smooth camera** — reduce lerp snap
+7. **WASM deploy** — verify build, deploy to GitHub Pages
 
 ## Blockers
 None.
 
 ## Notes
-- Bevy 0.18 API is well-understood now (see LEARNINGS.md). Should be faster going forward.
-- Window is 800x700. With 60x60 grid at 12px cells = 720px, fits well. Or keep 16px cells but use camera zoom.
-- Screen shake in Bevy: modify camera transform with decaying offset per frame.
-- Floating text: spawn Text entity at world position, animate upward + fade out over ~1s.
-- Food pulse: oscillate sprite size using sin(time).
-- Death particles: spawn N small sprites that fly outward from death position.
+- effects.rs now handles all transient visual effects (SOLID)
+- rendering.rs re-exports effects functions for backward compat
+- GameState has 4 variants: WaitingToStart, Countdown, Playing, GameOver
+- Bevy audio: probably needs bevy::audio feature and AudioSource/AudioPlayer
+- Sound is highest-impact P1 — transforms the entire feel

@@ -13,17 +13,17 @@ A polished, juicy snake battle royale playable in-browser that feels like a real
 - [x] Scoring + kill tracking
 - [x] Minimap
 - [x] Camera follow player
-- [ ] Bigger map — current 40x40 (16px cells) feels cramped. Target: 60x60+ with 12-14px cells or zoom
-- [ ] Juice: screen shake on death/kill
-- [ ] Juice: score popup when eating food (+1 floating text)
-- [ ] Juice: food pulsing/glowing animation
-- [ ] Juice: death explosion (particles or expanding ring)
-- [ ] Juice: arena shrink warning (flash/shake before shrink)
-- [ ] Juice: speed lines or visual indicator when speed increases
-- [ ] Snake head distinct from body (eyes, shape, or size difference)
-- [ ] Kill feed (top-right, "Red killed Blue", fades out)
-- [ ] Countdown (3-2-1-GO) before match starts
-- [ ] Fix entity despawned warnings (race condition in cleanup)
+- [x] Bigger map — 60x60 grid, 12px cells, 900x780 window
+- [x] Juice: screen shake on death/kill
+- [x] Juice: score popup when eating food (+1 floating text)
+- [x] Juice: food pulsing/glowing animation
+- [x] Juice: death explosion (particles or expanding ring)
+- [x] Juice: arena shrink warning (flash/shake before shrink)
+- [x] Juice: speed lines or visual indicator when speed increases
+- [x] Snake head distinct from body (eyes, shape, or size difference)
+- [x] Kill feed (top-right, "Red killed Blue", fades out)
+- [x] Countdown (3-2-1-GO) before match starts
+- [x] Fix entity despawned warnings (race condition in cleanup)
 
 ### P1: Should Have
 - [ ] 10 snakes (currently 6)
