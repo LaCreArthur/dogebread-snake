@@ -133,6 +133,13 @@ If you can't verify it, you didn't ship it. You wrote code that might work. That
 
 The auto-screenshot system exists for a reason — you can't see the screen, but you CAN capture frames and inspect them. Use it every sprint.
 
+**Improve your testing over time.** If verification is slow or painful, that's a problem to solve — not a reason to skip it. Examples:
+- First sprint: manual `cargo run` + eyeball screenshots → slow but works
+- Later: automated test harness that runs game for N ticks and asserts state → fast, reliable
+- Even later: CI runs visual regression tests on every commit → zero-effort verification
+
+Each iteration, ask: "How can I make testing faster/easier for next time?" If you find a way, implement it AND log it in LEARNINGS.md. Compounding test efficiency is as valuable as compounding features.
+
 ---
 
 ## Meta-principles
