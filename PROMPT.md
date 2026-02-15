@@ -68,10 +68,13 @@ One goal per iteration. Focused. Ship it.
 
 ## 5. BEFORE YOU STOP (mandatory gates)
 
-### Gate 1: Does it work?
+### Gate 1: Does it ACTUALLY work? (not "it compiles so it's fine")
 - [ ] Code compiles
-- [ ] No regressions (existing features still work)
-- [ ] Your change is actually observable/testable
+- [ ] **Run the game and verify visually.** Use `AUTO_SCREENSHOT=1 cargo run -p client` to capture screenshots, or `AUTO_TEST=1` for automated simulation. LOOK at what happened. Did your change show up? Does it look right?
+- [ ] **Run the tests.** `cargo test` — all pass, no regressions.
+- [ ] **If WASM change: test in browser.** Build with `./build-web.sh`, serve with `python3 -m http.server 8000 -d web/`, verify it loads and runs. Don't assume WASM works because native works.
+- [ ] No regressions — existing features still function correctly
+- [ ] Your change is actually observable (not just "I wrote the code")
 
 ### Gate 2: Scratchpad handoff
 Update `.ralph/agent/scratchpad.md` for your next iteration:
@@ -115,6 +118,20 @@ Ask yourself honestly:
 All goals genuinely addressed? → `<promise>LOOP_COMPLETE</promise>`
 
 **DO NOT output the promise if work remains. The loop exists to keep you going. Use it.**
+
+---
+
+## Testing philosophy
+
+**"It compiles" is not "it works."** Every sprint must include real verification:
+- **Visual changes** → run the game, capture screenshot, confirm it looks right
+- **Gameplay changes** → run a simulation (AUTO_TEST), watch the logs, verify behavior
+- **WASM changes** → actually serve and load in a browser
+- **Sound changes** → run and listen (or check audio system initializes without errors)
+
+If you can't verify it, you didn't ship it. You wrote code that might work. That's not the same thing.
+
+The auto-screenshot system exists for a reason — you can't see the screen, but you CAN capture frames and inspect them. Use it every sprint.
 
 ---
 
