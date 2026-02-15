@@ -93,7 +93,7 @@ fn gen_shrink_warning() -> Vec<f32> {
     for i in 0..n {
         let t = i as f32 / SAMPLE_RATE as f32;
         // Alternate between 600Hz and 800Hz every 0.1s
-        let freq = if ((t * 10.0) as u32) % 2 == 0 { 600.0 } else { 800.0 };
+        let freq = if ((t * 10.0) as u32).is_multiple_of(2) { 600.0 } else { 800.0 };
         let envelope = 0.8 - 0.3 * (t / duration);
         let val = (2.0 * std::f32::consts::PI * freq * t).sin() * envelope * 0.35;
         samples.push(val);

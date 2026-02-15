@@ -571,6 +571,7 @@ fn wait_for_start(
 }
 
 /// Run the 3-2-1-GO! countdown, then transition to Playing
+#[allow(clippy::too_many_arguments)]
 fn run_countdown(
     mut commands: Commands,
     time: Res<Time>,
@@ -681,10 +682,10 @@ fn arena_shrink(
     warning.active = bounds.can_shrink() && elapsed > (duration - 2.0);
 
     // Play warning sound on activation (not every frame)
-    if warning.active && !was_warning {
-        if let Some(ref sfx) = sfx {
-            audio::play_sfx(&mut commands, &sfx.shrink_warning);
-        }
+    if warning.active && !was_warning
+        && let Some(ref sfx) = sfx
+    {
+        audio::play_sfx(&mut commands, &sfx.shrink_warning);
     }
 
     if !shrink_timer.timer.just_finished() {
