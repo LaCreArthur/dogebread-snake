@@ -89,18 +89,19 @@ fn main() {
         .add_systems(OnEnter(GameState::GameOver), rendering::show_game_over)
         .add_systems(OnExit(GameState::GameOver), rendering::hide_game_over)
         .add_systems(Update, restart_on_space.run_if(in_state(GameState::GameOver)))
-        // Always running (rendering, cleanup, camera)
+        // Always running: rendering
         .add_systems(Update, (
             rendering::render_snakes,
             rendering::render_food,
             rendering::update_alive_text,
             rendering::update_grid_cells,
             rendering::update_minimap,
+            rendering::update_spectating,
             rendering::camera_follow,
             update_timer_text,
-            cleanup_dead_snakes,
         ))
-        .add_systems(Update, auto_screenshot)
+        // Always running: utilities
+        .add_systems(Update, (cleanup_dead_snakes, handle_esc_quit, auto_screenshot))
         .run();
 }
 
@@ -536,6 +537,15 @@ fn update_timer_text(
     let mins = secs / 60;
     let secs = secs % 60;
     **text = format!("{}:{:02}", mins, secs);
+}
+
+/// Quit game on ESC
+fn handle_esc_quit(
+    keyboard: Res<ButtonInput<KeyCode>>,
+) {
+    if keyboard.just_pressed(KeyCode::Escape) {
+        std::process::exit(0);
+    }
 }
 
 /// Auto-screenshot resource (enable with AUTO_SCREENSHOT=1 env var)

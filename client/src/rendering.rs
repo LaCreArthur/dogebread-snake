@@ -402,6 +402,44 @@ pub fn update_grid_cells(
     }
 }
 
+/// Marker for spectating text
+#[derive(Component)]
+pub struct SpectatingText;
+
+/// Show/hide spectating message based on player alive status
+pub fn update_spectating(
+    mut commands: Commands,
+    player_query: Query<&Snake, With<PlayerControlled>>,
+    existing: Query<Entity, With<SpectatingText>>,
+    state: Res<State<GameState>>,
+) {
+    let player_dead = player_query
+        .single()
+        .map(|s| !s.alive)
+        .unwrap_or(true);
+
+    let show = *state.get() == GameState::Playing && player_dead;
+
+    if show && existing.is_empty() {
+        commands.spawn((
+            Text::new("SPECTATING"),
+            TextFont { font_size: 28.0, ..default() },
+            TextColor(Color::srgba(1.0, 1.0, 1.0, 0.6)),
+            Node {
+                position_type: PositionType::Absolute,
+                bottom: Val::Px(MINIMAP_MARGIN + MINIMAP_SIZE + 10.0),
+                right: Val::Px(MINIMAP_MARGIN),
+                ..default()
+            },
+            SpectatingText,
+        ));
+    } else if !show {
+        for entity in &existing {
+            commands.entity(entity).despawn();
+        }
+    }
+}
+
 /// Marker for start prompt UI
 #[derive(Component)]
 pub struct StartPrompt;
@@ -418,6 +456,7 @@ pub fn show_start_prompt(mut commands: Commands) {
             row_gap: Val::Px(15.0),
             ..default()
         },
+        BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.4)),
         StartPrompt,
     )).with_children(|parent| {
         parent.spawn((
