@@ -444,9 +444,9 @@ fn restart_on_space(
     }
     shake.intensity = 0.0;
 
-    // Also clean up any kill feed entries
-    // (they'll be cleaned up by animate_kill_feed naturally, but let's be thorough)
+    // Also clean up any kill feed entries and game over animation
     commands.remove_resource::<CountdownTimer>();
+    commands.remove_resource::<rendering::GameOverAnimation>();
 
     let positions = spawn_positions();
     for i in 0..NUM_SNAKES {

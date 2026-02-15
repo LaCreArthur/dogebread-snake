@@ -632,6 +632,44 @@ pub fn hide_start_prompt(
 #[derive(Component)]
 pub struct GameOverOverlay;
 
+/// Marker for the game-over title text
+#[derive(Component)]
+pub(crate) struct GameOverTitle;
+
+/// Marker for the winner announcement text
+#[derive(Component)]
+pub(crate) struct GameOverWinner;
+
+/// Marker for the rankings container (holds individual ranking entries)
+#[derive(Component)]
+pub(crate) struct GameOverRankings;
+
+/// Marker for the restart prompt
+#[derive(Component)]
+pub(crate) struct GameOverRestart;
+
+/// Phased animation controller for the game over screen
+#[derive(Resource)]
+pub struct GameOverAnimation {
+    timer: Timer,
+    phase: u8,
+    /// Cached data so animate system doesn't re-query snakes
+    player_won: bool,
+    player_lost: bool,
+    winner_text: String,
+    rankings: Vec<RankingEntry>,
+    total_kills: u32,
+}
+
+struct RankingEntry {
+    name: String,
+    score: u32,
+    kills: u32,
+    alive: bool,
+    color: Color,
+    is_player: bool,
+}
+
 fn snake_color_name(id: u32) -> &'static str {
     match id % 8 {
         0 => "Gold",
@@ -651,7 +689,8 @@ pub fn get_snake_color_name(id: u32) -> &'static str {
     snake_color_name(id)
 }
 
-/// Show game over screen with scores
+/// Show game over screen — spawns the overlay container and inserts the animation resource.
+/// The actual content is revealed progressively by `animate_game_over`.
 pub fn show_game_over(
     mut commands: Commands,
     existing: Query<Entity, With<GameOverOverlay>>,
@@ -661,35 +700,51 @@ pub fn show_game_over(
         return;
     }
 
-    // Find winner
+    // --- Collect data for the animation resource ---
     let winner = snake_query.iter().find(|(s, _, _)| s.alive);
+    let player_won = winner.map(|(_, _, id)| id.0 == 0).unwrap_or(false);
+    let player_lost = !player_won;
     let winner_text = if let Some((_, _, id)) = winner {
         if id.0 == 0 {
-            "very victory! so win!".to_string()
+            "VICTORY! very win! so champion!".to_string()
         } else {
             format!("{} doge wins! much skill!", snake_color_name(id.0))
         }
     } else {
-        "wow such draw!".to_string()
+        "wow such draw! no survivors!".to_string()
     };
 
-    // Build scoreboard sorted by score descending
-    let mut scores: Vec<(u32, u32, u32, bool)> = snake_query
+    // Build sorted rankings: alive first, then by score desc, then kills desc
+    let mut rankings: Vec<RankingEntry> = snake_query
         .iter()
-        .map(|(s, _, id)| (id.0, s.score, s.kills, s.alive))
-        .collect();
-    scores.sort_by(|a, b| b.1.cmp(&a.1).then(b.2.cmp(&a.2)));
-
-    let scoreboard: String = scores
-        .iter()
-        .map(|(id, score, kills, alive)| {
-            let name = if *id == 0 { "You" } else { snake_color_name(*id) };
-            let status = if *alive { " *" } else { "" };
-            format!("{}  -  {} food, {} kills{}", name, score, kills, status)
+        .map(|(s, color, id)| RankingEntry {
+            name: if id.0 == 0 { "You".to_string() } else { snake_color_name(id.0).to_string() },
+            score: s.score,
+            kills: s.kills,
+            alive: s.alive,
+            color: color.head,
+            is_player: id.0 == 0,
         })
-        .collect::<Vec<_>>()
-        .join("\n");
+        .collect();
+    rankings.sort_by(|a, b| {
+        b.alive.cmp(&a.alive)
+            .then(b.score.cmp(&a.score))
+            .then(b.kills.cmp(&a.kills))
+    });
 
+    let total_kills: u32 = rankings.iter().map(|r| r.kills).sum();
+
+    commands.insert_resource(GameOverAnimation {
+        timer: Timer::from_seconds(0.6, TimerMode::Once),
+        phase: 0,
+        player_won,
+        player_lost,
+        winner_text,
+        rankings,
+        total_kills,
+    });
+
+    // --- Spawn overlay container (starts semi-transparent, darkens via animation) ---
     commands.spawn((
         Node {
             width: Val::Percent(100.0),
@@ -697,33 +752,208 @@ pub fn show_game_over(
             justify_content: JustifyContent::Center,
             align_items: AlignItems::Center,
             flex_direction: FlexDirection::Column,
-            row_gap: Val::Px(15.0),
+            row_gap: Val::Px(12.0),
             ..default()
         },
-        BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.7)),
+        BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.0)),
         GameOverOverlay,
-    )).with_children(|parent| {
-        parent.spawn((
-            Text::new("such game over • wow"),
-            TextFont { font_size: 48.0, ..default() },
-            TextColor(DOGE_GOLD),
-        ));
-        parent.spawn((
-            Text::new(winner_text),
-            TextFont { font_size: 32.0, ..default() },
-            TextColor(Color::WHITE),
-        ));
-        parent.spawn((
-            Text::new(scoreboard),
-            TextFont { font_size: 18.0, ..default() },
-            TextColor(Color::srgb(0.85, 0.85, 0.85)),
-        ));
-        parent.spawn((
-            Text::new("Press SPACE for much restart"),
-            TextFont { font_size: 20.0, ..default() },
-            TextColor(Color::srgb(0.7, 0.7, 0.7)),
-        ));
-    });
+    ));
+}
+
+/// Phased reveal animation for the game over screen.
+/// Phase 0 (0-0.6s): Overlay fades in, "GAME OVER" title appears
+/// Phase 1 (0.6-1.6s): Winner announcement fades in
+/// Phase 2 (1.6-2.6s): Rankings appear
+/// Phase 3 (2.6s+): Restart prompt + stats
+pub fn animate_game_over(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut anim: ResMut<GameOverAnimation>,
+    mut overlay_query: Query<(Entity, &mut BackgroundColor), With<GameOverOverlay>>,
+    title_query: Query<&GameOverTitle>,
+    winner_query: Query<&GameOverWinner>,
+    rankings_query: Query<&GameOverRankings>,
+    restart_query: Query<&GameOverRestart>,
+) {
+    anim.timer.tick(time.delta());
+
+    // Fade in overlay background during phase 0
+    if anim.phase == 0 {
+        let frac = anim.timer.fraction();
+        let alpha = (frac * 1.2).min(0.8); // fade to 0.8
+        for (_, mut bg) in &mut overlay_query {
+            bg.0 = Color::srgba(0.0, 0.0, 0.0, alpha);
+        }
+    }
+
+    if !anim.timer.just_finished() {
+        return;
+    }
+
+    let current_phase = anim.phase;
+    match current_phase {
+        0 => {
+            // Phase 0 complete → spawn title, start phase 1
+            let Ok((overlay_entity, mut bg)) = overlay_query.single_mut() else { return; };
+            bg.0 = Color::srgba(0.0, 0.0, 0.0, 0.8);
+
+            if title_query.is_empty() {
+                let title = commands.spawn((
+                    Text::new("such game over • wow"),
+                    TextFont { font_size: 52.0, ..default() },
+                    TextColor(DOGE_GOLD),
+                    GameOverTitle,
+                )).id();
+                commands.entity(overlay_entity).add_child(title);
+            }
+
+            anim.phase = 1;
+            anim.timer = Timer::from_seconds(1.0, TimerMode::Once);
+        }
+        1 => {
+            // Phase 1 complete → spawn winner announcement, start phase 2
+            let Ok((overlay_entity, _)) = overlay_query.single_mut() else { return; };
+
+            if winner_query.is_empty() {
+                let (text, color, font_size) = if anim.player_won {
+                    (anim.winner_text.clone(), Color::srgb(1.0, 0.84, 0.0), 44.0) // bright gold
+                } else if anim.player_lost {
+                    (anim.winner_text.clone(), Color::srgb(0.65, 0.65, 0.72), 32.0) // muted
+                } else {
+                    (anim.winner_text.clone(), Color::srgb(0.85, 0.75, 0.5), 32.0)
+                };
+
+                let winner = commands.spawn((
+                    Text::new(text),
+                    TextFont { font_size, ..default() },
+                    TextColor(color),
+                    GameOverWinner,
+                )).id();
+                commands.entity(overlay_entity).add_child(winner);
+            }
+
+            anim.phase = 2;
+            anim.timer = Timer::from_seconds(1.0, TimerMode::Once);
+        }
+        2 => {
+            // Phase 2 complete → spawn rankings, start phase 3
+            let Ok((overlay_entity, _)) = overlay_query.single_mut() else { return; };
+
+            if rankings_query.is_empty() {
+                // Rankings container
+                let rankings_container = commands.spawn((
+                    Node {
+                        flex_direction: FlexDirection::Column,
+                        align_items: AlignItems::Start,
+                        row_gap: Val::Px(4.0),
+                        padding: UiRect::all(Val::Px(16.0)),
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgba(0.05, 0.05, 0.12, 0.6)),
+                    GameOverRankings,
+                )).id();
+                commands.entity(overlay_entity).add_child(rankings_container);
+
+                // Header
+                let header = commands.spawn((
+                    Text::new("── final rankings ──"),
+                    TextFont { font_size: 16.0, ..default() },
+                    TextColor(Color::srgb(0.6, 0.55, 0.4)),
+                )).id();
+                commands.entity(rankings_container).add_child(header);
+
+                // Individual ranking rows
+                for (i, entry) in anim.rankings.iter().enumerate() {
+                    let rank_label = match i {
+                        0 => "1st",
+                        1 => "2nd",
+                        2 => "3rd",
+                        _ => match i + 1 {
+                            4 => "4th",
+                            5 => "5th",
+                            6 => "6th",
+                            7 => "7th",
+                            8 => "8th",
+                            9 => "9th",
+                            10 => "10th",
+                            _ => "??",
+                        },
+                    };
+
+                    let you_marker = if entry.is_player { "  ← YOU" } else { "" };
+                    let crown = if i == 0 && entry.alive { " ♛" } else { "" };
+                    let status = if entry.alive { " ★" } else { "" };
+
+                    let row_text = format!(
+                        "{}{}  {}{}  •  {} food  •  {} kills{}",
+                        rank_label, crown, entry.name, you_marker, entry.score, entry.kills, status,
+                    );
+
+                    // Color: snake's actual color for name, brighter for player
+                    let text_color = if entry.is_player {
+                        // Player row: bright gold
+                        Color::srgb(1.0, 0.84, 0.0)
+                    } else if i == 0 && entry.alive {
+                        // Winner (non-player): their snake color at full brightness
+                        entry.color
+                    } else {
+                        // Others: their snake color, slightly muted
+                        let c = entry.color.to_srgba();
+                        Color::srgb(c.red * 0.8, c.green * 0.8, c.blue * 0.8)
+                    };
+
+                    let font_size = if entry.is_player || (i == 0 && entry.alive) {
+                        19.0
+                    } else {
+                        16.0
+                    };
+
+                    let row = commands.spawn((
+                        Text::new(row_text),
+                        TextFont { font_size, ..default() },
+                        TextColor(text_color),
+                    )).id();
+                    commands.entity(rankings_container).add_child(row);
+                }
+
+                // Stats summary
+                let stats_text = format!(
+                    "total kills: {}  •  much carnage",
+                    anim.total_kills,
+                );
+                let stats = commands.spawn((
+                    Text::new(stats_text),
+                    TextFont { font_size: 14.0, ..default() },
+                    TextColor(Color::srgb(0.5, 0.5, 0.5)),
+                )).id();
+                commands.entity(rankings_container).add_child(stats);
+            }
+
+            anim.phase = 3;
+            anim.timer = Timer::from_seconds(1.0, TimerMode::Once);
+        }
+        3 => {
+            // Phase 3 complete → show restart prompt
+            let Ok((overlay_entity, _)) = overlay_query.single_mut() else { return; };
+
+            if restart_query.is_empty() {
+                let restart = commands.spawn((
+                    Text::new("Press SPACE for much restart"),
+                    TextFont { font_size: 22.0, ..default() },
+                    TextColor(Color::srgb(0.7, 0.7, 0.7)),
+                    GameOverRestart,
+                )).id();
+                commands.entity(overlay_entity).add_child(restart);
+            }
+
+            // Stay at phase 4 (done)
+            anim.phase = 4;
+            anim.timer = Timer::from_seconds(999.0, TimerMode::Once);
+        }
+        _ => {
+            // Animation complete, nothing to do
+        }
+    }
 }
 
 /// Remove game over overlay
@@ -736,6 +966,7 @@ pub fn hide_game_over(
             ec.despawn();
         }
     }
+    commands.remove_resource::<GameOverAnimation>();
 }
 
 // animate_floating_text, animate_death_particles, spawn_score_popup,
