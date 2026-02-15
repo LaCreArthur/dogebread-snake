@@ -2,6 +2,9 @@ use bevy::prelude::*;
 use shared::constants::*;
 use shared::game::*;
 
+// Re-export effects functions used by lib.rs via rendering:: call sites
+pub use crate::effects::{spawn_score_popup, spawn_death_particles};
+
 /// Grid background cell with its position
 #[derive(Component)]
 pub struct GridCell {
@@ -37,18 +40,7 @@ pub struct MinimapDot {
     pub snake_id: SnakeId,
 }
 
-/// Floating text that drifts up and fades (e.g. "+1" score popup)
-#[derive(Component)]
-pub struct FloatingText {
-    pub timer: Timer,
-}
-
-/// Death particle: flies outward, shrinks, fades
-#[derive(Component)]
-pub struct DeathParticle {
-    pub velocity: Vec2,
-    pub timer: Timer,
-}
+// FloatingText and DeathParticle moved to effects.rs
 
 /// Countdown text displayed during 3-2-1-GO phase
 #[derive(Component)]
@@ -219,7 +211,9 @@ pub fn render_snakes(
             let mut sorted = existing.clone();
             sorted.sort_by_key(|(_, i)| *i);
             for (entity, _) in sorted.iter().rev().take(existing_count - needed) {
-                commands.entity(*entity).despawn();
+                if let Ok(mut ec) = commands.get_entity(*entity) {
+                    ec.despawn();
+                }
             }
         }
     }
@@ -250,14 +244,19 @@ pub fn render_snakes(
                 };
                 sprite.color = Color::srgba(0.4, 0.4, 0.4, blink);
             } else if seg.index == 0 {
+                // Head: full brightness
                 sprite.color = color.head;
             } else {
-                sprite.color = color.body;
+                // Body: 80% brightness of body color
+                let c = color.body.to_srgba();
+                sprite.color = Color::srgb(c.red * 0.8, c.green * 0.8, c.blue * 0.8);
             }
 
-            // Head is slightly larger
+            // Head is full cell size (bubble head), body has more gap
             if seg.index == 0 {
-                sprite.custom_size = Some(Vec2::splat(CELL_SIZE - 1.0));
+                sprite.custom_size = Some(Vec2::splat(CELL_SIZE));
+            } else {
+                sprite.custom_size = Some(Vec2::splat(CELL_SIZE - 3.0));
             }
         }
     }
@@ -274,7 +273,9 @@ pub fn render_food(
 
     if foods.is_empty() {
         for (entity, _, _) in &food_sprite_query {
-            commands.entity(entity).despawn();
+            if let Ok(mut ec) = commands.get_entity(entity) {
+                ec.despawn();
+            }
         }
         return;
     }
@@ -303,7 +304,9 @@ pub fn render_food(
 
     // Remove excess
     for (entity, _, _) in existing.iter().skip(foods.len()) {
-        commands.entity(*entity).despawn();
+        if let Ok(mut ec) = commands.get_entity(*entity) {
+            ec.despawn();
+        }
     }
 }
 
@@ -396,7 +399,9 @@ pub fn update_minimap(
 
     for (entity, dot, _, _) in &dot_query {
         if !alive_ids.contains(&dot.snake_id) {
-            commands.entity(entity).despawn();
+            if let Ok(mut ec) = commands.get_entity(entity) {
+                ec.despawn();
+            }
         }
     }
 
@@ -546,7 +551,9 @@ pub fn update_spectating(
         ));
     } else if !show {
         for entity in &existing {
-            commands.entity(entity).despawn();
+            if let Ok(mut ec) = commands.get_entity(entity) {
+                ec.despawn();
+            }
         }
     }
 }
@@ -603,7 +610,9 @@ pub fn hide_start_prompt(
     query: Query<Entity, With<StartPrompt>>,
 ) {
     for entity in &query {
-        commands.entity(entity).despawn();
+        if let Ok(mut ec) = commands.get_entity(entity) {
+            ec.despawn();
+        }
     }
 }
 
@@ -711,97 +720,14 @@ pub fn hide_game_over(
     overlay_query: Query<Entity, With<GameOverOverlay>>,
 ) {
     for entity in &overlay_query {
-        commands.entity(entity).despawn();
-    }
-}
-
-/// Animate floating text: drift up, fade out, despawn when done
-pub fn animate_floating_text(
-    mut commands: Commands,
-    time: Res<Time>,
-    mut query: Query<(Entity, &mut FloatingText, &mut Transform, &mut TextColor)>,
-) {
-    for (entity, mut ft, mut transform, mut color) in &mut query {
-        ft.timer.tick(time.delta());
-        let frac = ft.timer.fraction();
-
-        // Float upward
-        transform.translation.y += 30.0 * time.delta_secs();
-
-        // Fade out
-        let alpha = 1.0 - frac;
-        color.0 = Color::srgba(0.95, 0.85, 0.3, alpha);
-
-        if ft.timer.just_finished() {
-            commands.entity(entity).despawn();
+        if let Ok(mut ec) = commands.get_entity(entity) {
+            ec.despawn();
         }
     }
 }
 
-/// Animate death particles: move, shrink, fade, despawn
-pub fn animate_death_particles(
-    mut commands: Commands,
-    time: Res<Time>,
-    mut query: Query<(Entity, &mut DeathParticle, &mut Transform, &mut Sprite)>,
-) {
-    let dt = time.delta_secs();
-    for (entity, mut particle, mut transform, mut sprite) in &mut query {
-        particle.timer.tick(time.delta());
-        let frac = particle.timer.fraction();
-
-        // Move
-        transform.translation.x += particle.velocity.x * dt;
-        transform.translation.y += particle.velocity.y * dt;
-
-        // Shrink and fade
-        let remaining = 1.0 - frac;
-        transform.scale = Vec3::splat(remaining);
-        if let Some(ref mut size) = sprite.custom_size {
-            // Keep base size, scale handles shrinking
-            let _ = size;
-        }
-        let c = sprite.color.to_srgba();
-        sprite.color = Color::srgba(c.red, c.green, c.blue, remaining);
-
-        if particle.timer.just_finished() {
-            commands.entity(entity).despawn();
-        }
-    }
-}
-
-/// Spawn a "+1" floating text at a world position
-pub fn spawn_score_popup(commands: &mut Commands, world_pos: Vec2) {
-    commands.spawn((
-        Text2d::new("+1"),
-        TextFont { font_size: 16.0, ..default() },
-        TextColor(Color::srgba(0.95, 0.85, 0.3, 1.0)),
-        Transform::from_translation(world_pos.extend(10.0)),
-        FloatingText {
-            timer: Timer::from_seconds(0.8, TimerMode::Once),
-        },
-    ));
-}
-
-/// Spawn death explosion particles at a world position with the given color
-pub fn spawn_death_particles(commands: &mut Commands, world_pos: Vec2, color: Color, time_secs: f32) {
-    let num_particles = 10;
-    for i in 0..num_particles {
-        // Distribute evenly around circle, use time_secs for slight variation
-        let angle = (i as f32 / num_particles as f32) * std::f32::consts::TAU
-            + (time_secs * 31.0).sin() * 0.3;
-        let speed = 40.0 + (time_secs * (i as f32 + 1.0) * 17.0).sin().abs() * 40.0;
-        let velocity = Vec2::new(angle.cos() * speed, angle.sin() * speed);
-
-        commands.spawn((
-            Sprite::from_color(color, Vec2::splat(CELL_SIZE * 0.5)),
-            Transform::from_translation(world_pos.extend(5.0)),
-            DeathParticle {
-                velocity,
-                timer: Timer::from_seconds(1.0, TimerMode::Once),
-            },
-        ));
-    }
-}
+// animate_floating_text, animate_death_particles, spawn_score_popup,
+// spawn_death_particles moved to effects.rs
 
 /// Spawn the countdown overlay (centered large text)
 pub fn spawn_countdown_overlay(mut commands: Commands) {
@@ -829,7 +755,9 @@ pub fn despawn_countdown_overlay(
     query: Query<Entity, With<CountdownText>>,
 ) {
     for entity in &query {
-        commands.entity(entity).despawn();
+        if let Ok(mut ec) = commands.get_entity(entity) {
+            ec.despawn();
+        }
     }
 }
 
@@ -870,7 +798,9 @@ pub fn animate_kill_feed(
         color.0 = Color::srgba(c.red, c.green, c.blue, alpha);
 
         if entry.timer.just_finished() {
-            commands.entity(entity).despawn();
+            if let Ok(mut ec) = commands.get_entity(entity) {
+                ec.despawn();
+            }
         } else {
             entries.push((entity, entry.timer.remaining_secs()));
         }
@@ -880,7 +810,9 @@ pub fn animate_kill_feed(
 
     for (i, (entity, _)) in entries.iter().enumerate() {
         if i >= 4 {
-            commands.entity(*entity).despawn();
+            if let Ok(mut ec) = commands.get_entity(*entity) {
+                ec.despawn();
+            }
             continue;
         }
         if let Ok((_, _, _, mut node)) = query.get_mut(*entity) {

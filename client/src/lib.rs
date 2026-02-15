@@ -1,3 +1,4 @@
+mod effects;
 mod input;
 mod rendering;
 mod ui;
@@ -124,8 +125,9 @@ pub fn run() {
             rendering::animate_kill_feed,
         ))
         .add_systems(Update, (
-            rendering::animate_floating_text,
-            rendering::animate_death_particles,
+            effects::animate_floating_text,
+            effects::animate_death_particles,
+            effects::animate_speed_up_text,
         ))
         .run();
 }
@@ -324,7 +326,9 @@ fn game_tick(
         let head = snake.head();
         for (food_entity, food) in &food_query {
             if food.pos == head {
-                commands.entity(food_entity).despawn();
+                if let Ok(mut ec) = commands.get_entity(food_entity) {
+                    ec.despawn();
+                }
             }
         }
     }
@@ -338,7 +342,9 @@ fn game_tick(
     let mut foods_eaten = 0;
     for (food_entity, food) in &food_query {
         if eaten_positions.contains(&food.pos) {
-            commands.entity(food_entity).despawn();
+            if let Ok(mut ec) = commands.get_entity(food_entity) {
+                ec.despawn();
+            }
             foods_eaten += 1;
 
             for (_, mut snake, _, _, player) in &mut snake_query {
@@ -380,8 +386,8 @@ fn restart_on_space(
     mut bounds: ResMut<ArenaBounds>,
     mut tick: ResMut<GameTick>,
     mut match_timer: ResMut<MatchTimer>,
-    floating_text_query: Query<Entity, With<rendering::FloatingText>>,
-    particle_query: Query<Entity, With<rendering::DeathParticle>>,
+    floating_text_query: Query<Entity, With<effects::FloatingText>>,
+    particle_query: Query<Entity, With<effects::DeathParticle>>,
     mut shake: ResMut<rendering::ScreenShake>,
 ) {
     let should_restart = keyboard.just_pressed(KeyCode::Space)
@@ -392,25 +398,39 @@ fn restart_on_space(
     }
 
     for entity in &snake_query {
-        commands.entity(entity).despawn();
+        if let Ok(mut ec) = commands.get_entity(entity) {
+            ec.despawn();
+        }
     }
     for entity in &food_query {
-        commands.entity(entity).despawn();
+        if let Ok(mut ec) = commands.get_entity(entity) {
+            ec.despawn();
+        }
     }
     for entity in &segment_query {
-        commands.entity(entity).despawn();
+        if let Ok(mut ec) = commands.get_entity(entity) {
+            ec.despawn();
+        }
     }
     for entity in &food_sprite_query {
-        commands.entity(entity).despawn();
+        if let Ok(mut ec) = commands.get_entity(entity) {
+            ec.despawn();
+        }
     }
     for entity in &overlay_query {
-        commands.entity(entity).despawn();
+        if let Ok(mut ec) = commands.get_entity(entity) {
+            ec.despawn();
+        }
     }
     for entity in &floating_text_query {
-        commands.entity(entity).despawn();
+        if let Ok(mut ec) = commands.get_entity(entity) {
+            ec.despawn();
+        }
     }
     for entity in &particle_query {
-        commands.entity(entity).despawn();
+        if let Ok(mut ec) = commands.get_entity(entity) {
+            ec.despawn();
+        }
     }
     shake.intensity = 0.0;
 
@@ -525,10 +545,14 @@ fn cleanup_dead_snakes(
         if death_timer.timer.just_finished() {
             for (seg_entity, seg) in &segment_query {
                 if seg.snake_entity == snake_entity {
-                    commands.entity(seg_entity).despawn();
+                    if let Ok(mut ec) = commands.get_entity(seg_entity) {
+                        ec.despawn();
+                    }
                 }
             }
-            commands.entity(snake_entity).despawn();
+            if let Ok(mut ec) = commands.get_entity(snake_entity) {
+                ec.despawn();
+            }
         }
     }
 }
@@ -613,12 +637,15 @@ fn arena_shrink(
 
     for (entity, food) in &food_query {
         if !bounds.contains(food.pos) {
-            commands.entity(entity).despawn();
+            if let Ok(mut ec) = commands.get_entity(entity) {
+                ec.despawn();
+            }
         }
     }
 }
 
 fn speed_increase(
+    mut commands: Commands,
     time: Res<Time>,
     mut speed_timer: ResMut<SpeedTimer>,
     mut tick: ResMut<GameTick>,
@@ -631,6 +658,9 @@ fn speed_increase(
     let current = tick.timer.duration().as_secs_f32();
     let new_interval = (current * 0.85).max(0.06);
     tick.timer.set_duration(std::time::Duration::from_secs_f32(new_interval));
+
+    // Show "SPEED UP!" indicator
+    effects::spawn_speed_up_text(&mut commands);
 }
 
 fn track_match_time(
