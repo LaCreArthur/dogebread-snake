@@ -33,7 +33,7 @@ A polished, juicy snake battle royale playable in-browser that feels like a real
 - [x] Camera zoom out slightly as arena shrinks (Sprint 5)
 - [x] Smooth camera — delta-time exponential smoothing (Sprint 5)
 - [x] Trail/afterimage effect on fast snakes (Sprint 7)
-- [x] WASM build verified + build script (Sprint 8) — GitHub Pages deploy pending
+- [x] WASM build verified + build script (Sprint 8) + GitHub Pages live (Sprint 11)
 
 ### P2: Nice to Have
 - [ ] Full menu flow: Home → Play → Game → Leaderboard → Home

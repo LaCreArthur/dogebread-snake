@@ -83,3 +83,10 @@
 - **Result:** success
 - **Changes:** 13a7e02 — release profile (opt-level="z", lto=true, codegen-units=1, strip=true), wasm-opt -Oz in build-wasm.sh
 - **Notes:** WASM reduced from 73MB → 20MB (73% reduction). Still large — could disable unused Bevy features for further reduction.
+
+## Sprint 11 — 2026-02-15 13:55
+- **Task:** GitHub repo creation + GitHub Pages deployment
+- **Model:** opus (manual)
+- **Result:** success
+- **Changes:** d445c5a (untrack WASM artifacts), gh-pages branch deployed
+- **Notes:** Created public repo LaCreArthur/dogebread-snake. Untracked WASM artifacts from main (were committed before .gitignore). Created orphan gh-pages branch with pre-built web/ contents. GitHub Pages live at https://lacrearthur.github.io/dogebread-snake/. Note: 85MB WASM in git history (pre-optimization commit) triggers GitHub warning but is not blocking.
