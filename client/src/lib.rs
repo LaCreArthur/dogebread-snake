@@ -27,11 +27,16 @@ pub struct SimpleRng {
 
 impl SimpleRng {
     fn new() -> Self {
-        use std::time::{SystemTime, UNIX_EPOCH};
-        let seed = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos() as u64;
+        #[cfg(target_arch = "wasm32")]
+        let seed = (js_sys::Date::now() * 1000.0) as u64;
+        #[cfg(not(target_arch = "wasm32"))]
+        let seed = {
+            use std::time::{SystemTime, UNIX_EPOCH};
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos() as u64
+        };
         Self { state: seed }
     }
 
@@ -53,6 +58,9 @@ struct CountdownTimer {
 
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
+
+#[cfg(target_arch = "wasm32")]
+use js_sys;
 
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(start)]
@@ -814,19 +822,19 @@ fn auto_test_system(
     let current_state = *state.get();
 
     // --- Countdown captures ---
-    if current_state == GameState::Countdown {
-        if let Some(ref cd) = countdown {
-            let elapsed = cd.timer.elapsed_secs();
-            // "3" shows at elapsed 0-1s — capture early in that window
-            if elapsed >= 0.1 && elapsed < 0.9 && !auto_test.captured.contains("01") {
-                auto_test.captured.insert("01".to_string());
-                auto_test_capture("01-countdown-3.png", &mut commands);
-            }
-            // "GO!" shows at elapsed >= 3.0s
-            if elapsed >= 3.1 && !auto_test.captured.contains("02") {
-                auto_test.captured.insert("02".to_string());
-                auto_test_capture("02-countdown-go.png", &mut commands);
-            }
+    if current_state == GameState::Countdown
+        && let Some(ref cd) = countdown
+    {
+        let elapsed = cd.timer.elapsed_secs();
+        // "3" shows at elapsed 0-1s — capture early in that window
+        if (0.1..0.9).contains(&elapsed) && !auto_test.captured.contains("01") {
+            auto_test.captured.insert("01".to_string());
+            auto_test_capture("01-countdown-3.png", &mut commands);
+        }
+        // "GO!" shows at elapsed >= 3.0s
+        if elapsed >= 3.1 && !auto_test.captured.contains("02") {
+            auto_test.captured.insert("02".to_string());
+            auto_test_capture("02-countdown-go.png", &mut commands);
         }
     }
 
@@ -868,25 +876,25 @@ fn auto_test_system(
     }
 
     // --- Game over phases ---
-    if current_state == GameState::GameOver {
-        if let Some(ref ga) = anim {
-            // Phase 1: title visible (phase advances to 1 after title spawns)
-            if ga.phase >= 1 && !auto_test.captured.contains("07") {
-                auto_test.captured.insert("07".to_string());
-                auto_test_capture("07-gameover-title.png", &mut commands);
-            }
-            // Phase 3: rankings visible
-            if ga.phase >= 3 && !auto_test.captured.contains("08") {
-                auto_test.captured.insert("08".to_string());
-                auto_test_capture("08-gameover-rankings.png", &mut commands);
-            }
-            // Phase 4: restart prompt visible (final state)
-            if ga.phase >= 4 && !auto_test.captured.contains("09") {
-                auto_test.captured.insert("09".to_string());
-                auto_test_capture("09-gameover-complete.png", &mut commands);
-                // Start exit timer
-                auto_test.exit_timer = Some(Timer::from_seconds(1.0, TimerMode::Once));
-            }
+    if current_state == GameState::GameOver
+        && let Some(ref ga) = anim
+    {
+        // Phase 1: title visible (phase advances to 1 after title spawns)
+        if ga.phase >= 1 && !auto_test.captured.contains("07") {
+            auto_test.captured.insert("07".to_string());
+            auto_test_capture("07-gameover-title.png", &mut commands);
+        }
+        // Phase 3: rankings visible
+        if ga.phase >= 3 && !auto_test.captured.contains("08") {
+            auto_test.captured.insert("08".to_string());
+            auto_test_capture("08-gameover-rankings.png", &mut commands);
+        }
+        // Phase 4: restart prompt visible (final state)
+        if ga.phase >= 4 && !auto_test.captured.contains("09") {
+            auto_test.captured.insert("09".to_string());
+            auto_test_capture("09-gameover-complete.png", &mut commands);
+            // Start exit timer
+            auto_test.exit_timer = Some(Timer::from_seconds(1.0, TimerMode::Once));
         }
     }
 }
