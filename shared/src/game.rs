@@ -210,6 +210,7 @@ impl Food {
 pub enum GameState {
     #[default]
     WaitingToStart,
+    Countdown,
     Playing,
     GameOver,
 }

@@ -50,6 +50,16 @@ pub struct DeathParticle {
     pub timer: Timer,
 }
 
+/// Countdown text displayed during 3-2-1-GO phase
+#[derive(Component)]
+pub struct CountdownText;
+
+/// Kill feed entry in the top-right corner
+#[derive(Component)]
+pub struct KillFeedEntry {
+    pub timer: Timer,
+}
+
 /// Screen shake resource — set intensity to trigger, decays each frame
 #[derive(Resource)]
 pub struct ScreenShake {
@@ -234,8 +244,7 @@ pub fn render_snakes(
                 let blink = if let Some(dt) = death_timer {
                     let t = dt.timer.fraction();
                     // Fast blink that fades out
-                    let alpha = (1.0 - t) * ((t * 12.0).sin() * 0.5 + 0.5);
-                    alpha
+                    (1.0 - t) * ((t * 12.0).sin() * 0.5 + 0.5)
                 } else {
                     0.5
                 };
@@ -332,7 +341,7 @@ pub fn camera_follow(
     };
 
     let target = match state.get() {
-        GameState::WaitingToStart | GameState::GameOver => {
+        GameState::WaitingToStart | GameState::Countdown | GameState::GameOver => {
             Vec2::ZERO
         }
         GameState::Playing => {
@@ -616,6 +625,11 @@ fn snake_color_name(id: u32) -> &'static str {
     }
 }
 
+/// Get the color name for a snake ID (public for kill feed)
+pub fn get_snake_color_name(id: u32) -> &'static str {
+    snake_color_name(id)
+}
+
 /// Show game over screen with scores
 pub fn show_game_over(
     mut commands: Commands,
@@ -786,6 +800,92 @@ pub fn spawn_death_particles(commands: &mut Commands, world_pos: Vec2, color: Co
                 timer: Timer::from_seconds(1.0, TimerMode::Once),
             },
         ));
+    }
+}
+
+/// Spawn the countdown overlay (centered large text)
+pub fn spawn_countdown_overlay(mut commands: Commands) {
+    commands.spawn((
+        Node {
+            width: Val::Percent(100.0),
+            height: Val::Percent(100.0),
+            justify_content: JustifyContent::Center,
+            align_items: AlignItems::Center,
+            ..default()
+        },
+        CountdownText,
+    )).with_children(|parent| {
+        parent.spawn((
+            Text::new("3"),
+            TextFont { font_size: 120.0, ..default() },
+            TextColor(DOGE_GOLD),
+        ));
+    });
+}
+
+/// Remove countdown overlay
+pub fn despawn_countdown_overlay(
+    mut commands: Commands,
+    query: Query<Entity, With<CountdownText>>,
+) {
+    for entity in &query {
+        commands.entity(entity).despawn();
+    }
+}
+
+/// Spawn a kill feed entry
+pub fn spawn_kill_feed_entry(commands: &mut Commands, message: String, color: Color) {
+    commands.spawn((
+        Text::new(message),
+        TextFont { font_size: 16.0, ..default() },
+        TextColor(color),
+        Node {
+            position_type: PositionType::Absolute,
+            top: Val::Px(40.0),
+            right: Val::Px(10.0),
+            ..default()
+        },
+        KillFeedEntry {
+            timer: Timer::from_seconds(3.0, TimerMode::Once),
+        },
+    ));
+}
+
+/// Animate kill feed entries: fade out and despawn, reposition stack
+pub fn animate_kill_feed(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut query: Query<(Entity, &mut KillFeedEntry, &mut TextColor, &mut Node)>,
+) {
+    let mut entries: Vec<(Entity, f32)> = Vec::new();
+    for (entity, mut entry, mut color, _) in &mut query {
+        entry.timer.tick(time.delta());
+        let frac = entry.timer.fraction();
+        let alpha = if frac > 0.67 {
+            1.0 - ((frac - 0.67) / 0.33)
+        } else {
+            1.0
+        };
+        let c = color.0.to_srgba();
+        color.0 = Color::srgba(c.red, c.green, c.blue, alpha);
+
+        if entry.timer.just_finished() {
+            commands.entity(entity).despawn();
+        } else {
+            entries.push((entity, entry.timer.remaining_secs()));
+        }
+    }
+
+    entries.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    for (i, (entity, _)) in entries.iter().enumerate() {
+        if i >= 4 {
+            commands.entity(*entity).despawn();
+            continue;
+        }
+        if let Ok((_, _, _, mut node)) = query.get_mut(*entity) {
+            node.top = Val::Px(40.0 + i as f32 * 22.0);
+        }
     }
 }
 

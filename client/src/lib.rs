@@ -42,6 +42,12 @@ impl SimpleRng {
     }
 }
 
+/// Countdown resource: tracks the 3-2-1-GO! timer
+#[derive(Resource)]
+struct CountdownTimer {
+    timer: Timer,
+}
+
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 
@@ -81,6 +87,11 @@ pub fn run() {
         .add_systems(OnEnter(GameState::WaitingToStart), rendering::show_start_prompt)
         .add_systems(OnExit(GameState::WaitingToStart), rendering::hide_start_prompt)
         .add_systems(Update, wait_for_start.run_if(in_state(GameState::WaitingToStart)))
+        // Countdown phase
+        .add_systems(OnEnter(GameState::Countdown), rendering::spawn_countdown_overlay)
+        .add_systems(OnExit(GameState::Countdown), rendering::despawn_countdown_overlay)
+        .add_systems(Update, run_countdown.run_if(in_state(GameState::Countdown)))
+        // Playing phase
         .add_systems(
             Update,
             (
@@ -106,7 +117,12 @@ pub fn run() {
             rendering::camera_follow,
             update_timer_text,
         ))
-        .add_systems(Update, (cleanup_dead_snakes, handle_esc_quit, auto_screenshot))
+        .add_systems(Update, (
+            cleanup_dead_snakes,
+            handle_esc_quit,
+            auto_screenshot,
+            rendering::animate_kill_feed,
+        ))
         .add_systems(Update, (
             rendering::animate_floating_text,
             rendering::animate_death_particles,
@@ -249,9 +265,9 @@ fn game_tick(
         }
     }
 
-    // Process deaths: trigger screen shake + death particles
-    for (entity, _) in &unique_kills {
-        if let Ok((_, mut snake, _, color, _)) = snake_query.get_mut(*entity) {
+    // Process deaths: trigger screen shake + death particles + kill feed
+    for (entity, killer) in &unique_kills {
+        if let Ok((_, mut snake, dead_id, color, _)) = snake_query.get_mut(*entity) {
             if snake.alive {
                 let death_pos = snake.head().to_world();
                 snake.alive = false;
@@ -269,6 +285,27 @@ fn game_tick(
                     color.head,
                     time.elapsed_secs(),
                 );
+
+                // Kill feed entry
+                let dead_name = if dead_id.0 == 0 {
+                    "You".to_string()
+                } else {
+                    rendering::get_snake_color_name(dead_id.0).to_string()
+                };
+                let (message, feed_color) = if let Some(killer_id) = killer {
+                    let killer_name = if killer_id.0 == 0 {
+                        "You".to_string()
+                    } else {
+                        rendering::get_snake_color_name(killer_id.0).to_string()
+                    };
+                    (
+                        format!("{} killed by {}!", dead_name, killer_name),
+                        color.head,
+                    )
+                } else {
+                    (format!("{} eliminated!", dead_name), color.head)
+                };
+                rendering::spawn_kill_feed_entry(&mut commands, message, feed_color);
             }
         }
     }
@@ -377,6 +414,10 @@ fn restart_on_space(
     }
     shake.intensity = 0.0;
 
+    // Also clean up any kill feed entries
+    // (they'll be cleaned up by animate_kill_feed naturally, but let's be thorough)
+    commands.remove_resource::<CountdownTimer>();
+
     let positions = spawn_positions();
     for i in 0..NUM_SNAKES {
         let (x, y, dir) = positions[i as usize];
@@ -407,6 +448,7 @@ fn restart_on_space(
 
 fn wait_for_start(
     keyboard: Res<ButtonInput<KeyCode>>,
+    mut commands: Commands,
     mut next_state: ResMut<NextState<GameState>>,
     mut snake_query: Query<&mut Snake, With<PlayerControlled>>,
 ) {
@@ -426,6 +468,48 @@ fn wait_for_start(
         if let Ok(mut snake) = snake_query.single_mut() {
             snake.set_direction(d);
         }
+        // Start countdown instead of going directly to Playing
+        commands.insert_resource(CountdownTimer {
+            timer: Timer::from_seconds(3.5, TimerMode::Once),
+        });
+        next_state.set(GameState::Countdown);
+    }
+}
+
+/// Run the 3-2-1-GO! countdown, then transition to Playing
+fn run_countdown(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut countdown: ResMut<CountdownTimer>,
+    mut next_state: ResMut<NextState<GameState>>,
+    countdown_parent: Query<&Children, With<rendering::CountdownText>>,
+    mut text_query: Query<&mut Text, Without<rendering::CountdownText>>,
+) {
+    countdown.timer.tick(time.delta());
+    let elapsed = countdown.timer.elapsed_secs();
+
+    // Determine what text to show: 3 (0-1s), 2 (1-2s), 1 (2-3s), GO! (3-3.5s)
+    let label = if elapsed < 1.0 {
+        "3"
+    } else if elapsed < 2.0 {
+        "2"
+    } else if elapsed < 3.0 {
+        "1"
+    } else {
+        "GO!"
+    };
+
+    // Update the text child of the countdown overlay
+    for children in &countdown_parent {
+        for child in children.iter() {
+            if let Ok(mut text) = text_query.get_mut(child) {
+                **text = label.to_string();
+            }
+        }
+    }
+
+    if countdown.timer.just_finished() {
+        commands.remove_resource::<CountdownTimer>();
         next_state.set(GameState::Playing);
     }
 }
@@ -469,7 +553,7 @@ fn arena_shrink(
     time: Res<Time>,
     mut shrink_timer: ResMut<ArenaShrinkTimer>,
     mut bounds: ResMut<ArenaBounds>,
-    mut snake_query: Query<(Entity, &mut Snake, &SnakeColor)>,
+    mut snake_query: Query<(Entity, &mut Snake, &SnakeColor, &SnakeId)>,
     food_query: Query<(Entity, &Food)>,
     mut shake: ResMut<rendering::ScreenShake>,
     mut warning: ResMut<rendering::ShrinkWarning>,
@@ -494,7 +578,7 @@ fn arena_shrink(
     // Camera shake on arena shrink
     shake.intensity = 4.0;
 
-    for (entity, mut snake, color) in &mut snake_query {
+    for (entity, mut snake, color, snake_id) in &mut snake_query {
         if !snake.alive {
             continue;
         }
@@ -512,6 +596,18 @@ fn arena_shrink(
                 time.elapsed_secs(),
             );
             shake.intensity = 8.0; // Stronger shake if someone dies from shrink
+
+            // Kill feed for arena crush
+            let dead_name = if snake_id.0 == 0 {
+                "You".to_string()
+            } else {
+                rendering::get_snake_color_name(snake_id.0).to_string()
+            };
+            rendering::spawn_kill_feed_entry(
+                &mut commands,
+                format!("{} eliminated!", dead_name),
+                color.head,
+            );
         }
     }
 
