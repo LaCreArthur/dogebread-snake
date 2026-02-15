@@ -277,6 +277,13 @@ fn game_tick(
         }
     }
 
+    // Get player's current kill count for screen shake scaling
+    let player_kills = snake_query
+        .iter()
+        .find(|(_, _, id, _, _)| id.0 == 0)
+        .map(|(_, snake, _, _, _)| snake.kills)
+        .unwrap_or(0);
+
     // Process deaths: trigger screen shake + death particles + kill feed
     for (entity, killer) in &unique_kills {
         if let Ok((_, mut snake, dead_id, color, _)) = snake_query.get_mut(*entity) {
@@ -287,8 +294,17 @@ fn game_tick(
                     timer: Timer::from_seconds(2.0, TimerMode::Once),
                 });
 
-                // Screen shake on any death
-                shake.intensity = 8.0;
+                // Screen shake on any death — stronger for player kills
+                if let Some(killer_id) = killer {
+                    if killer_id.0 == 0 {
+                        // Player kill: scale with kill count
+                        shake.intensity = 8.0 + (player_kills as f32 * 2.0).min(12.0);
+                    } else {
+                        shake.intensity = 8.0;
+                    }
+                } else {
+                    shake.intensity = 8.0;
+                }
 
                 // Death explosion particles
                 rendering::spawn_death_particles(

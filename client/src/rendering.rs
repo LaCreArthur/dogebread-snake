@@ -335,6 +335,7 @@ pub fn update_alive_text(
 /// Zooms out as arena shrinks.
 pub fn camera_follow(
     player_query: Query<&Snake, With<PlayerControlled>>,
+    spectate_query: Query<(&Snake, &SnakeId), Without<PlayerControlled>>,
     mut camera_query: Query<(&mut Transform, &mut Projection), With<Camera2d>>,
     state: Res<State<GameState>>,
     time: Res<Time>,
@@ -354,7 +355,12 @@ pub fn camera_follow(
                 if snake.alive {
                     snake.head().to_world()
                 } else {
-                    Vec2::ZERO
+                    // Auto-spectate: follow the strongest alive snake
+                    spectate_query.iter()
+                        .filter(|(s, _)| s.alive)
+                        .max_by_key(|(s, _)| s.score)
+                        .map(|(s, _)| s.head().to_world())
+                        .unwrap_or(Vec2::ZERO)
                 }
             } else {
                 Vec2::ZERO
@@ -538,7 +544,9 @@ pub struct SpectatingText;
 pub fn update_spectating(
     mut commands: Commands,
     player_query: Query<&Snake, With<PlayerControlled>>,
-    existing: Query<Entity, With<SpectatingText>>,
+    spectate_query: Query<(&Snake, &SnakeId), Without<PlayerControlled>>,
+    mut existing: Query<(Entity, &Children), With<SpectatingText>>,
+    mut text_query: Query<&mut Text, Without<SpectatingText>>,
     state: Res<State<GameState>>,
 ) {
     let player_dead = player_query
@@ -548,21 +556,45 @@ pub fn update_spectating(
 
     let show = *state.get() == GameState::Playing && player_dead;
 
-    if show && existing.is_empty() {
-        commands.spawn((
-            Text::new("much spectate • wow"),
-            TextFont { font_size: 28.0, ..default() },
-            TextColor(Color::srgba(0.91, 0.69, 0.29, 0.7)),
-            Node {
-                position_type: PositionType::Absolute,
-                bottom: Val::Px(MINIMAP_MARGIN + MINIMAP_SIZE + 10.0),
-                right: Val::Px(MINIMAP_MARGIN),
-                ..default()
-            },
-            SpectatingText,
-        ));
-    } else if !show {
-        for entity in &existing {
+    if show {
+        // Find strongest alive snake
+        let target = spectate_query.iter()
+            .filter(|(s, _)| s.alive)
+            .max_by_key(|(s, _)| s.score);
+
+        let message = if let Some((_, id)) = target {
+            format!("much spectate • following {} doge", get_snake_color_name(id.0))
+        } else {
+            "much spectate • wow".to_string()
+        };
+
+        // Update existing text or spawn new
+        if let Ok((_entity, children)) = existing.single_mut() {
+            // Update text content
+            for child in children.iter() {
+                if let Ok(mut text) = text_query.get_mut(child) {
+                    **text = message.clone();
+                }
+            }
+        } else {
+            commands.spawn((
+                Node {
+                    position_type: PositionType::Absolute,
+                    bottom: Val::Px(MINIMAP_MARGIN + MINIMAP_SIZE + 10.0),
+                    right: Val::Px(MINIMAP_MARGIN),
+                    ..default()
+                },
+                SpectatingText,
+            )).with_children(|parent| {
+                parent.spawn((
+                    Text::new(message),
+                    TextFont { font_size: 28.0, ..default() },
+                    TextColor(Color::srgba(0.91, 0.69, 0.29, 0.7)),
+                ));
+            });
+        }
+    } else {
+        for (entity, _) in &existing {
             if let Ok(mut ec) = commands.get_entity(entity) {
                 ec.despawn();
             }
