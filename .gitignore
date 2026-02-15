@@ -2,3 +2,9 @@
 *.swp
 *.swo
 .DS_Store
+
+# WASM build artifacts
+web/client.js
+web/client_bg.wasm
+web/client_bg.wasm.d.ts
+web/client.d.ts
