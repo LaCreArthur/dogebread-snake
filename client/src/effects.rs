@@ -20,6 +20,18 @@ pub struct SpeedUpText {
     pub timer: Timer,
 }
 
+/// Trail particle: fading afterimage left behind by moving snakes
+#[derive(Component)]
+pub struct TrailParticle {
+    pub timer: Timer,
+}
+
+/// Resource to control trail particle spawning rate
+#[derive(bevy::prelude::Resource)]
+pub struct TrailSpawner {
+    pub timer: Timer,
+}
+
 /// Animate floating text: drift up, fade out, despawn when done
 pub fn animate_floating_text(
     mut commands: Commands,
@@ -145,6 +157,60 @@ pub fn animate_speed_up_text(
         color.0 = Color::srgba(1.0, 0.85, 0.2, alpha);
 
         if speed_text.timer.just_finished() {
+            if let Ok(mut ec) = commands.get_entity(entity) {
+                ec.despawn();
+            }
+        }
+    }
+}
+
+/// Spawn trail particles at snake positions each tick
+pub fn spawn_trail_particles(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut spawner: ResMut<TrailSpawner>,
+    snake_query: Query<(&shared::game::Snake, &shared::game::SnakeColor)>,
+) {
+    spawner.timer.tick(time.delta());
+    if !spawner.timer.just_finished() {
+        return;
+    }
+
+    for (snake, color) in &snake_query {
+        if !snake.alive || snake.segments.len() < 2 {
+            continue;
+        }
+        let trail_pos = snake.segments[1]; // where head just was
+        let c = color.body.to_srgba();
+        commands.spawn((
+            Sprite::from_color(
+                Color::srgba(c.red, c.green, c.blue, 0.4),
+                Vec2::splat(CELL_SIZE * 0.6),
+            ),
+            Transform::from_translation(trail_pos.to_world().extend(0.5)),
+            TrailParticle {
+                timer: Timer::from_seconds(0.4, TimerMode::Once),
+            },
+        ));
+    }
+}
+
+/// Animate trail particles: fade out and despawn
+pub fn animate_trail_particles(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut query: Query<(Entity, &mut TrailParticle, &mut Sprite)>,
+) {
+    for (entity, mut particle, mut sprite) in &mut query {
+        particle.timer.tick(time.delta());
+        let frac = particle.timer.fraction();
+
+        // Fade from 0.4 to 0.0
+        let alpha = 0.4 * (1.0 - frac);
+        let c = sprite.color.to_srgba();
+        sprite.color = Color::srgba(c.red, c.green, c.blue, alpha);
+
+        if particle.timer.just_finished() {
             if let Ok(mut ec) = commands.get_entity(entity) {
                 ec.despawn();
             }

@@ -83,6 +83,9 @@ pub fn run() {
         })
         .insert_resource(rendering::ScreenShake::default())
         .insert_resource(rendering::ShrinkWarning::default())
+        .insert_resource(effects::TrailSpawner {
+            timer: Timer::from_seconds(0.15, TimerMode::Repeating),
+        })
         .init_state::<GameState>()
         .add_systems(Startup, (rendering::spawn_grid, rendering::spawn_ui, spawn_match))
         .add_systems(OnEnter(GameState::WaitingToStart), rendering::show_start_prompt)
@@ -102,12 +105,16 @@ pub fn run() {
                 arena_shrink.after(game_tick),
                 speed_increase,
                 track_match_time,
+                effects::spawn_trail_particles,
             )
                 .run_if(in_state(GameState::Playing)),
         )
         .add_systems(OnEnter(GameState::GameOver), rendering::show_game_over)
         .add_systems(OnExit(GameState::GameOver), rendering::hide_game_over)
-        .add_systems(Update, restart_on_space.run_if(in_state(GameState::GameOver)))
+        .add_systems(Update, (
+            restart_on_space,
+            rendering::animate_game_over,
+        ).run_if(in_state(GameState::GameOver)))
         .add_systems(Update, (
             rendering::render_snakes,
             rendering::render_food,
@@ -128,6 +135,7 @@ pub fn run() {
             effects::animate_floating_text,
             effects::animate_death_particles,
             effects::animate_speed_up_text,
+            effects::animate_trail_particles,
         ))
         .run();
 }
