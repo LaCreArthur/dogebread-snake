@@ -1,3 +1,4 @@
+mod audio;
 mod effects;
 mod input;
 mod rendering;
@@ -111,7 +112,7 @@ pub fn run() {
             timer: Timer::from_seconds(0.15, TimerMode::Repeating),
         })
         .init_state::<GameState>()
-        .add_systems(Startup, (rendering::spawn_grid, rendering::spawn_ui, spawn_match))
+        .add_systems(Startup, (rendering::spawn_grid, rendering::spawn_ui, spawn_match, audio::setup_audio))
         .add_systems(OnEnter(GameState::WaitingToStart), rendering::show_start_prompt)
         .add_systems(OnExit(GameState::WaitingToStart), rendering::hide_start_prompt)
         .add_systems(Update, wait_for_start.run_if(in_state(GameState::WaitingToStart)))
@@ -222,6 +223,7 @@ fn game_tick(
     mut next_state: ResMut<NextState<GameState>>,
     bounds: Res<ArenaBounds>,
     mut shake: ResMut<rendering::ScreenShake>,
+    sfx: Option<Res<audio::SoundEffects>>,
 ) {
     tick.timer.tick(time.delta());
     if !tick.timer.just_finished() {
@@ -361,6 +363,11 @@ fn game_tick(
                 (format!("{} ded! much rip!", dead_name), color.head)
             };
             rendering::spawn_kill_feed_entry(&mut commands, message, feed_color);
+
+            // Death sound
+            if let Some(ref sfx) = sfx {
+                audio::play_sfx(&mut commands, &sfx.death);
+            }
         }
     }
 
@@ -368,6 +375,9 @@ fn game_tick(
     match_state.alive_count = alive;
 
     if alive <= 1 && match_state.total_snakes > 1 {
+        if let Some(ref sfx) = sfx {
+            audio::play_sfx(&mut commands, &sfx.game_over);
+        }
         next_state.set(GameState::GameOver);
     }
 
@@ -404,9 +414,12 @@ fn game_tick(
                     snake.grow_pending += 2;
                     snake.score += 1;
 
-                    // Score popup only for the player's snake
+                    // Score popup + eat sound only for the player's snake
                     if player.is_some() {
                         rendering::spawn_score_popup(&mut commands, food.pos.to_world());
+                        if let Some(ref sfx) = sfx {
+                            audio::play_sfx(&mut commands, &sfx.eat);
+                        }
                     }
                 }
             }
@@ -561,20 +574,34 @@ fn run_countdown(
     mut next_state: ResMut<NextState<GameState>>,
     countdown_parent: Query<&Children, With<rendering::CountdownText>>,
     mut text_query: Query<&mut Text, Without<rendering::CountdownText>>,
+    sfx: Option<Res<audio::SoundEffects>>,
+    mut last_phase: Local<u8>,
 ) {
     countdown.timer.tick(time.delta());
     let elapsed = countdown.timer.elapsed_secs();
 
     // Determine what text to show: 3 (0-1s), 2 (1-2s), 1 (2-3s), GO! (3-3.5s)
-    let label = if elapsed < 1.0 {
-        "such 3"
+    let (label, phase) = if elapsed < 1.0 {
+        ("such 3", 1u8)
     } else if elapsed < 2.0 {
-        "very 2"
+        ("very 2", 2)
     } else if elapsed < 3.0 {
-        "much 1"
+        ("much 1", 3)
     } else {
-        "WOW GO!"
+        ("WOW GO!", 4)
     };
+
+    // Play sound on phase transitions
+    if phase != *last_phase {
+        *last_phase = phase;
+        if let Some(ref sfx) = sfx {
+            if phase <= 3 {
+                audio::play_sfx(&mut commands, &sfx.countdown_beep);
+            } else {
+                audio::play_sfx(&mut commands, &sfx.countdown_go);
+            }
+        }
+    }
 
     // Update the text child of the countdown overlay
     for children in &countdown_parent {
@@ -639,13 +666,22 @@ fn arena_shrink(
     food_query: Query<(Entity, &Food)>,
     mut shake: ResMut<rendering::ScreenShake>,
     mut warning: ResMut<rendering::ShrinkWarning>,
+    sfx: Option<Res<audio::SoundEffects>>,
 ) {
     shrink_timer.timer.tick(time.delta());
 
     // Activate shrink warning when ~2 seconds remain (timer elapsed > 10s of 12s interval)
     let elapsed = shrink_timer.timer.elapsed_secs();
     let duration = shrink_timer.timer.duration().as_secs_f32();
+    let was_warning = warning.active;
     warning.active = bounds.can_shrink() && elapsed > (duration - 2.0);
+
+    // Play warning sound on activation (not every frame)
+    if warning.active && !was_warning {
+        if let Some(ref sfx) = sfx {
+            audio::play_sfx(&mut commands, &sfx.shrink_warning);
+        }
+    }
 
     if !shrink_timer.timer.just_finished() {
         return;
@@ -657,7 +693,10 @@ fn arena_shrink(
 
     bounds.shrink();
 
-    // Camera shake on arena shrink
+    // Camera shake + impact sound on arena shrink
+    if let Some(ref sfx) = sfx {
+        audio::play_sfx(&mut commands, &sfx.shrink_impact);
+    }
     shake.intensity = 4.0;
 
     for (entity, mut snake, color, snake_id) in &mut snake_query {
@@ -707,6 +746,7 @@ fn speed_increase(
     time: Res<Time>,
     mut speed_timer: ResMut<SpeedTimer>,
     mut tick: ResMut<GameTick>,
+    sfx: Option<Res<audio::SoundEffects>>,
 ) {
     speed_timer.timer.tick(time.delta());
     if !speed_timer.timer.just_finished() {
@@ -717,7 +757,10 @@ fn speed_increase(
     let new_interval = (current * 0.85).max(0.06);
     tick.timer.set_duration(std::time::Duration::from_secs_f32(new_interval));
 
-    // Show "SPEED UP!" indicator
+    // Show "SPEED UP!" indicator + sound
+    if let Some(ref sfx) = sfx {
+        audio::play_sfx(&mut commands, &sfx.speed_up);
+    }
     effects::spawn_speed_up_text(&mut commands);
 }
 
