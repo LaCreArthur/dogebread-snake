@@ -62,3 +62,10 @@
 - **Result:** success
 - **Changes:** c65bf66 — TrailParticle component, TrailSpawner resource (0.15s interval), spawn at segment[1], 0.4s fade, 40% initial opacity, 60% cell size (75 insertions)
 - **Notes:** Successfully ran parallel with Sprint 6 — different files (effects.rs vs rendering.rs). SOLID module separation prevented conflicts.
+
+## Sprint 8 — 2026-02-15 12:43
+- **Task:** WASM build pipeline and deployment setup
+- **Model:** sonnet
+- **Result:** success
+- **Changes:** 4d8ee54 — build-wasm.sh script, .gitignore for WASM artifacts (21 insertions)
+- **Notes:** WASM compiles in release mode. wasm-bindgen generates client.js (105K) + client_bg.wasm (73M). index.html import path matches. Local serving via python3 http.server verified. 73M WASM is large — needs wasm-opt or LTO for production.
