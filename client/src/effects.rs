@@ -20,6 +20,13 @@ pub struct SpeedUpText {
     pub timer: Timer,
 }
 
+/// Eat particle: golden sparkle burst when food is eaten
+#[derive(Component)]
+pub struct EatParticle {
+    pub velocity: Vec2,
+    pub timer: Timer,
+}
+
 /// Trail particle: fading afterimage left behind by moving snakes
 #[derive(Component)]
 pub struct TrailParticle {
@@ -128,6 +135,55 @@ pub fn spawn_death_particles(commands: &mut Commands, world_pos: Vec2, color: Co
                 timer: Timer::from_seconds(1.0, TimerMode::Once),
             },
         ));
+    }
+}
+
+/// Spawn golden eat sparkle particles at a food position
+pub fn spawn_eat_particles(commands: &mut Commands, world_pos: Vec2, time_secs: f32) {
+    let num = 6;
+    for i in 0..num {
+        let angle = (i as f32 / num as f32) * std::f32::consts::TAU
+            + (time_secs * 47.0).sin() * 0.5;
+        let speed = 50.0 + (time_secs * (i as f32 + 1.0) * 23.0).sin().abs() * 30.0;
+        let velocity = Vec2::new(angle.cos() * speed, angle.sin() * speed);
+
+        commands.spawn((
+            Sprite::from_color(
+                Color::srgba(0.95, 0.80, 0.25, 1.0), // golden
+                Vec2::splat(CELL_SIZE * 0.3),
+            ),
+            Transform::from_translation(world_pos.extend(6.0)),
+            EatParticle {
+                velocity,
+                timer: Timer::from_seconds(0.5, TimerMode::Once),
+            },
+        ));
+    }
+}
+
+/// Animate eat particles: fly outward, shrink, fade, despawn
+pub fn animate_eat_particles(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut query: Query<(Entity, &mut EatParticle, &mut Transform, &mut Sprite)>,
+) {
+    let dt = time.delta_secs();
+    for (entity, mut particle, mut transform, mut sprite) in &mut query {
+        particle.timer.tick(time.delta());
+        let frac = particle.timer.fraction();
+
+        transform.translation.x += particle.velocity.x * dt;
+        transform.translation.y += particle.velocity.y * dt;
+
+        let remaining = 1.0 - frac;
+        transform.scale = Vec3::splat(remaining);
+        sprite.color = Color::srgba(0.95, 0.80, 0.25, remaining);
+
+        if particle.timer.just_finished()
+            && let Ok(mut ec) = commands.get_entity(entity)
+        {
+            ec.despawn();
+        }
     }
 }
 

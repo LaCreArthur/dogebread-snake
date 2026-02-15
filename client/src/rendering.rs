@@ -3,7 +3,7 @@ use shared::constants::*;
 use shared::game::*;
 
 // Re-export effects functions used by lib.rs via rendering:: call sites
-pub use crate::effects::{spawn_score_popup, spawn_death_particles};
+pub use crate::effects::{spawn_score_popup, spawn_death_particles, spawn_eat_particles};
 
 /// Grid background cell with its position
 #[derive(Component)]
@@ -381,11 +381,17 @@ pub fn camera_follow(
     cam_transform.translation.x = smoothed.x;
     cam_transform.translation.y = smoothed.y;
 
-    // Arena zoom: zoom out as arena shrinks
+    // Arena zoom: zoom out as arena shrinks, dramatic zoom on game over
     if let Projection::Orthographic(ortho) = projection.as_mut() {
         let bounds_width = (bounds.max_x - bounds.min_x) as f32;
         let arena_fraction = bounds_width / (GRID_WIDTH as f32 - 2.0);
-        let target_scale = 1.0 + (1.0 - arena_fraction) * 0.5;
+        let mut target_scale = 1.0 + (1.0 - arena_fraction) * 0.5;
+
+        // Dramatic zoom-out on game over
+        if *state.get() == GameState::GameOver {
+            target_scale = 2.0;
+        }
+
         let scale_smoothing = 1.0 - (-3.0 * time.delta_secs()).exp();
         ortho.scale = ortho.scale + (target_scale - ortho.scale) * scale_smoothing;
     }

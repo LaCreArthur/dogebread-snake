@@ -65,9 +65,35 @@ Procedural WAV generation in memory — no external audio assets needed.
 | Countdown GO! | Bright chord | Major chord burst, 200ms |
 | Game over | Descending tone | Sine sweep 800→200Hz, 500ms |
 
-### Plan
-1. Enable `bevy/wav` feature in client/Cargo.toml
-2. Create `client/src/audio.rs` with WAV generation + sound resource
-3. Modify `lib.rs` to register audio module + play sounds at events
-4. Build + test
-5. Commit
+### Completed This Iteration
+- Created `client/src/audio.rs` (213 lines) — procedural WAV generation for 8 sound effects
+- Enabled `bevy/wav` feature in client/Cargo.toml (both native + WASM)
+- Integrated sounds into all game events: eat, death, game over, arena shrink (warning + impact), speed up, countdown (beep + GO chord)
+- Used `Option<Res<SoundEffects>>` pattern for graceful fallback if audio not initialized
+- Used `Local<u8>` for countdown phase tracking (plays sound once per phase transition)
+- Build passes, all 72 tests pass
+- Committed: 8bc2a10
+
+### Goal 2 Status: COMPLETE
+All 8 sound effects are procedurally generated and play at the correct game events. No external audio assets needed.
+
+### Next iteration
+- Goal 3: Visual polish — particle effects, screen shake, smooth camera transitions
+
+## Current Focus: Goal 3 — Visual Polish
+
+### Status Assessment
+Screen shake, death particles, trail particles, and score popups already exist. What's missing:
+
+1. **Eat particles** — golden sparkle burst when player eats food (highest impact, most frequent event)
+2. **Arena crush particles** — debris along the shrinking boundary
+3. **Game over camera zoom** — dramatic slow zoom-out instead of snap to center
+4. **Eat screen flash** — brief golden tint/pulse on eat (subtle juice)
+
+### This Iteration: Eat particles + game-over camera + eat flash
+- Add `EatParticle` component to effects.rs (golden sparkles, short-lived, radial burst)
+- Add `spawn_eat_particles()` function — 6 tiny golden particles, faster than death particles
+- Call it from `game_tick` when player eats food
+- Add game-over zoom: slowly increase ortho scale over 2s in GameOver state
+- Add brief screen shake on eat (subtle, intensity 2.0)
+- Verify with cargo build

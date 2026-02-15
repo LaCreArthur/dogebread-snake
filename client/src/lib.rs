@@ -160,6 +160,7 @@ pub fn run() {
         .add_systems(Update, (
             effects::animate_floating_text,
             effects::animate_death_particles,
+            effects::animate_eat_particles,
             effects::animate_speed_up_text,
             effects::animate_trail_particles,
         ))
@@ -414,9 +415,12 @@ fn game_tick(
                     snake.grow_pending += 2;
                     snake.score += 1;
 
-                    // Score popup + eat sound only for the player's snake
+                    // Score popup + eat particles + sound only for the player's snake
                     if player.is_some() {
-                        rendering::spawn_score_popup(&mut commands, food.pos.to_world());
+                        let eat_pos = food.pos.to_world();
+                        rendering::spawn_score_popup(&mut commands, eat_pos);
+                        rendering::spawn_eat_particles(&mut commands, eat_pos, time.elapsed_secs());
+                        shake.intensity = 2.0;
                         if let Some(ref sfx) = sfx {
                             audio::play_sfx(&mut commands, &sfx.eat);
                         }
