@@ -5,3 +5,9 @@ resolver = "2"
 [workspace.dependencies]
 bevy = "0.18"
 serde = { version = "1", features = ["derive"] }
+
+[profile.release]
+opt-level = "z"       # Optimize for size
+lto = true            # Link-time optimization
+codegen-units = 1     # Single codegen unit for better optimization
+strip = true          # Strip debug symbols
