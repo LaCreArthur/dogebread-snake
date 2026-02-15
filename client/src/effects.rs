@@ -49,10 +49,10 @@ pub fn animate_floating_text(
         let alpha = 1.0 - frac;
         color.0 = Color::srgba(0.95, 0.85, 0.3, alpha);
 
-        if ft.timer.just_finished() {
-            if let Ok(mut ec) = commands.get_entity(entity) {
-                ec.despawn();
-            }
+        if ft.timer.just_finished()
+            && let Ok(mut ec) = commands.get_entity(entity)
+        {
+            ec.despawn();
         }
     }
 }
@@ -82,10 +82,10 @@ pub fn animate_death_particles(
         let c = sprite.color.to_srgba();
         sprite.color = Color::srgba(c.red, c.green, c.blue, remaining);
 
-        if particle.timer.just_finished() {
-            if let Ok(mut ec) = commands.get_entity(entity) {
-                ec.despawn();
-            }
+        if particle.timer.just_finished()
+            && let Ok(mut ec) = commands.get_entity(entity)
+        {
+            ec.despawn();
         }
     }
 }
@@ -156,10 +156,10 @@ pub fn animate_speed_up_text(
         let alpha = 1.0 - frac;
         color.0 = Color::srgba(1.0, 0.85, 0.2, alpha);
 
-        if speed_text.timer.just_finished() {
-            if let Ok(mut ec) = commands.get_entity(entity) {
-                ec.despawn();
-            }
+        if speed_text.timer.just_finished()
+            && let Ok(mut ec) = commands.get_entity(entity)
+        {
+            ec.despawn();
         }
     }
 }
@@ -210,10 +210,10 @@ pub fn animate_trail_particles(
         let c = sprite.color.to_srgba();
         sprite.color = Color::srgba(c.red, c.green, c.blue, alpha);
 
-        if particle.timer.just_finished() {
-            if let Ok(mut ec) = commands.get_entity(entity) {
-                ec.despawn();
-            }
+        if particle.timer.just_finished()
+            && let Ok(mut ec) = commands.get_entity(entity)
+        {
+            ec.despawn();
         }
     }
 }

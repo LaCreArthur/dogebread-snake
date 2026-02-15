@@ -69,15 +69,9 @@ impl Default for ScreenShake {
 }
 
 /// Shrink warning — flashes danger zone cells before arena shrinks
-#[derive(Resource)]
+#[derive(Resource, Default)]
 pub struct ShrinkWarning {
     pub active: bool,
-}
-
-impl Default for ShrinkWarning {
-    fn default() -> Self {
-        Self { active: false }
-    }
 }
 
 const MINIMAP_SIZE: f32 = 150.0;
@@ -416,10 +410,10 @@ pub fn update_minimap(
         .collect();
 
     for (entity, dot, _, _) in &dot_query {
-        if !alive_ids.contains(&dot.snake_id) {
-            if let Ok(mut ec) = commands.get_entity(entity) {
-                ec.despawn();
-            }
+        if !alive_ids.contains(&dot.snake_id)
+            && let Ok(mut ec) = commands.get_entity(entity)
+        {
+            ec.despawn();
         }
     }
 
@@ -497,9 +491,7 @@ pub fn update_grid_cells(
         let pos = cell.pos;
         let is_outer_border = pos.x == 0 || pos.y == 0 || pos.x == GRID_WIDTH - 1 || pos.y == GRID_HEIGHT - 1;
 
-        if is_outer_border {
-            sprite.color = COLOR_WALL;
-        } else if !bounds.contains(pos) {
+        if is_outer_border || !bounds.contains(pos) {
             sprite.color = COLOR_WALL;
         } else if has_shrunk && bounds.wall_distance(pos) <= 1 {
             // Danger zone: blink between normal and bright when warning active
@@ -797,6 +789,7 @@ pub fn show_game_over(
 /// Phase 1 (0.6-1.6s): Winner announcement fades in
 /// Phase 2 (1.6-2.6s): Rankings appear
 /// Phase 3 (2.6s+): Restart prompt + stats
+#[allow(clippy::too_many_arguments)]
 pub fn animate_game_over(
     mut commands: Commands,
     time: Res<Time>,

@@ -100,7 +100,7 @@ pub fn ai_tick(
                         blocked = true;
                         break;
                     }
-                } else if segments.iter().any(|s| *s == next) {
+                } else if segments.contains(&next) {
                     blocked = true;
                     break;
                 }
@@ -122,7 +122,7 @@ pub fn ai_tick(
                         if *sid == *my_id {
                             segs.iter().skip(1).any(|s| *s == exit_pos)
                         } else {
-                            segs.iter().any(|s| *s == exit_pos)
+                            segs.contains(&exit_pos)
                         }
                     });
                     if !exit_blocked {

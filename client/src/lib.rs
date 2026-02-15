@@ -185,6 +185,7 @@ fn spawn_match(
     match_state.alive_count = NUM_SNAKES;
 }
 
+#[allow(clippy::too_many_arguments)]
 fn game_tick(
     mut commands: Commands,
     time: Res<Time>,
@@ -227,18 +228,18 @@ fn game_tick(
             continue;
         }
 
-        if let Ok((_, snake, _, _, _)) = snake_query.get(*entity) {
-            if snake.self_collision() {
-                kills.push((*entity, None));
-                continue;
-            }
+        if let Ok((_, snake, _, _, _)) = snake_query.get(*entity)
+            && snake.self_collision()
+        {
+            kills.push((*entity, None));
+            continue;
         }
 
         for (other_id, body_segments) in &body_map {
             if *other_id == *my_id {
                 continue;
             }
-            if body_segments.iter().any(|s| *s == *head) {
+            if body_segments.contains(head) {
                 kills.push((*entity, Some(*other_id)));
                 break;
             }
@@ -286,55 +287,55 @@ fn game_tick(
 
     // Process deaths: trigger screen shake + death particles + kill feed
     for (entity, killer) in &unique_kills {
-        if let Ok((_, mut snake, dead_id, color, _)) = snake_query.get_mut(*entity) {
-            if snake.alive {
-                let death_pos = snake.head().to_world();
-                snake.alive = false;
-                commands.entity(*entity).insert(DeathTimer {
-                    timer: Timer::from_seconds(2.0, TimerMode::Once),
-                });
+        if let Ok((_, mut snake, dead_id, color, _)) = snake_query.get_mut(*entity)
+            && snake.alive
+        {
+            let death_pos = snake.head().to_world();
+            snake.alive = false;
+            commands.entity(*entity).insert(DeathTimer {
+                timer: Timer::from_seconds(2.0, TimerMode::Once),
+            });
 
-                // Screen shake on any death — stronger for player kills
-                if let Some(killer_id) = killer {
-                    if killer_id.0 == 0 {
-                        // Player kill: scale with kill count
-                        shake.intensity = 8.0 + (player_kills as f32 * 2.0).min(12.0);
-                    } else {
-                        shake.intensity = 8.0;
-                    }
+            // Screen shake on any death — stronger for player kills
+            if let Some(killer_id) = killer {
+                if killer_id.0 == 0 {
+                    // Player kill: scale with kill count
+                    shake.intensity = 8.0 + (player_kills as f32 * 2.0).min(12.0);
                 } else {
                     shake.intensity = 8.0;
                 }
+            } else {
+                shake.intensity = 8.0;
+            }
 
-                // Death explosion particles
-                rendering::spawn_death_particles(
-                    &mut commands,
-                    death_pos,
-                    color.head,
-                    time.elapsed_secs(),
-                );
+            // Death explosion particles
+            rendering::spawn_death_particles(
+                &mut commands,
+                death_pos,
+                color.head,
+                time.elapsed_secs(),
+            );
 
-                // Kill feed entry
-                let dead_name = if dead_id.0 == 0 {
+            // Kill feed entry
+            let dead_name = if dead_id.0 == 0 {
+                "You".to_string()
+            } else {
+                rendering::get_snake_color_name(dead_id.0).to_string()
+            };
+            let (message, feed_color) = if let Some(killer_id) = killer {
+                let killer_name = if killer_id.0 == 0 {
                     "You".to_string()
                 } else {
-                    rendering::get_snake_color_name(dead_id.0).to_string()
+                    rendering::get_snake_color_name(killer_id.0).to_string()
                 };
-                let (message, feed_color) = if let Some(killer_id) = killer {
-                    let killer_name = if killer_id.0 == 0 {
-                        "You".to_string()
-                    } else {
-                        rendering::get_snake_color_name(killer_id.0).to_string()
-                    };
-                    (
-                        format!("{} killed by {}!", dead_name, killer_name),
-                        color.head,
-                    )
-                } else {
-                    (format!("{} eliminated!", dead_name), color.head)
-                };
-                rendering::spawn_kill_feed_entry(&mut commands, message, feed_color);
-            }
+                (
+                    format!("{} killed by {}!", dead_name, killer_name),
+                    color.head,
+                )
+            } else {
+                (format!("{} eliminated!", dead_name), color.head)
+            };
+            rendering::spawn_kill_feed_entry(&mut commands, message, feed_color);
         }
     }
 
@@ -351,10 +352,10 @@ fn game_tick(
         }
         let head = snake.head();
         for (food_entity, food) in &food_query {
-            if food.pos == head {
-                if let Ok(mut ec) = commands.get_entity(food_entity) {
-                    ec.despawn();
-                }
+            if food.pos == head
+                && let Ok(mut ec) = commands.get_entity(food_entity)
+            {
+                ec.despawn();
             }
         }
     }
@@ -398,6 +399,7 @@ fn game_tick(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn restart_on_space(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut commands: Commands,
@@ -570,10 +572,10 @@ fn cleanup_dead_snakes(
         death_timer.timer.tick(time.delta());
         if death_timer.timer.just_finished() {
             for (seg_entity, seg) in &segment_query {
-                if seg.snake_entity == snake_entity {
-                    if let Ok(mut ec) = commands.get_entity(seg_entity) {
-                        ec.despawn();
-                    }
+                if seg.snake_entity == snake_entity
+                    && let Ok(mut ec) = commands.get_entity(seg_entity)
+                {
+                    ec.despawn();
                 }
             }
             if let Ok(mut ec) = commands.get_entity(snake_entity) {
@@ -598,6 +600,7 @@ struct MatchTimer {
     elapsed: f32,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn arena_shrink(
     mut commands: Commands,
     time: Res<Time>,
@@ -662,10 +665,10 @@ fn arena_shrink(
     }
 
     for (entity, food) in &food_query {
-        if !bounds.contains(food.pos) {
-            if let Ok(mut ec) = commands.get_entity(entity) {
-                ec.despawn();
-            }
+        if !bounds.contains(food.pos)
+            && let Ok(mut ec) = commands.get_entity(entity)
+        {
+            ec.despawn();
         }
     }
 }
