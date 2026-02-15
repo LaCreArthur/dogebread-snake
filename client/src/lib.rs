@@ -3,6 +3,8 @@ mod input;
 mod rendering;
 mod ui;
 
+use std::collections::HashSet;
+
 use bevy::prelude::*;
 use bevy::render::view::screenshot::{save_to_disk, Screenshot};
 use shared::constants::*;
@@ -81,6 +83,20 @@ pub fn run() {
             enabled: std::env::var("AUTO_SCREENSHOT").is_ok(),
             counter: 0,
         })
+        .insert_resource({
+            let enabled = std::env::var("AUTO_TEST").is_ok();
+            if enabled {
+                std::fs::create_dir_all("test-output").ok();
+                info!("[AUTO_TEST] mode enabled — capturing screenshots at game events");
+            }
+            AutoTestState {
+                enabled,
+                captured: HashSet::new(),
+                prev_alive_count: 0,
+                arena_shrunk: false,
+                exit_timer: None,
+            }
+        })
         .insert_resource(rendering::ScreenShake::default())
         .insert_resource(rendering::ShrinkWarning::default())
         .insert_resource(effects::TrailSpawner {
@@ -129,6 +145,7 @@ pub fn run() {
             cleanup_dead_snakes,
             handle_esc_quit,
             auto_screenshot,
+            auto_test_system,
             rendering::animate_kill_feed,
         ))
         .add_systems(Update, (
@@ -499,8 +516,12 @@ fn wait_for_start(
     mut commands: Commands,
     mut next_state: ResMut<NextState<GameState>>,
     mut snake_query: Query<&mut Snake, With<PlayerControlled>>,
+    auto_test: Res<AutoTestState>,
 ) {
-    let dir = if keyboard.just_pressed(KeyCode::ArrowUp) || keyboard.just_pressed(KeyCode::KeyW) {
+    let dir = if auto_test.enabled {
+        // AUTO_TEST: skip waiting, start immediately
+        Some(Direction::Right)
+    } else if keyboard.just_pressed(KeyCode::ArrowUp) || keyboard.just_pressed(KeyCode::KeyW) {
         Some(Direction::Up)
     } else if keyboard.just_pressed(KeyCode::ArrowDown) || keyboard.just_pressed(KeyCode::KeyS) {
         Some(Direction::Down)
@@ -727,6 +748,17 @@ struct ScreenshotTimer {
     counter: u32,
 }
 
+/// Event-driven visual testing mode (AUTO_TEST=1).
+/// Captures screenshots at meaningful game events instead of timed intervals.
+#[derive(Resource)]
+struct AutoTestState {
+    enabled: bool,
+    captured: HashSet<String>,
+    prev_alive_count: u32,
+    arena_shrunk: bool,
+    exit_timer: Option<Timer>,
+}
+
 fn auto_screenshot(
     mut commands: Commands,
     time: Res<Time>,
@@ -743,5 +775,118 @@ fn auto_screenshot(
         commands
             .spawn(Screenshot::primary_window())
             .observe(save_to_disk(path));
+    }
+}
+
+fn auto_test_capture(name: &str, commands: &mut Commands) {
+    let path = format!("test-output/{}", name);
+    info!("[AUTO_TEST] capturing {}", path);
+    commands
+        .spawn(Screenshot::primary_window())
+        .observe(save_to_disk(path));
+}
+
+#[allow(clippy::too_many_arguments)]
+fn auto_test_system(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut auto_test: ResMut<AutoTestState>,
+    state: Res<State<GameState>>,
+    match_state: Res<MatchState>,
+    countdown: Option<Res<CountdownTimer>>,
+    anim: Option<Res<rendering::GameOverAnimation>>,
+    bounds: Res<ArenaBounds>,
+) {
+    if !auto_test.enabled {
+        return;
+    }
+
+    // Handle exit timer
+    if let Some(ref mut timer) = auto_test.exit_timer {
+        timer.tick(time.delta());
+        if timer.just_finished() {
+            info!("[AUTO_TEST] all captures done, exiting");
+            std::process::exit(0);
+        }
+        return;
+    }
+
+    let current_state = *state.get();
+
+    // --- Countdown captures ---
+    if current_state == GameState::Countdown {
+        if let Some(ref cd) = countdown {
+            let elapsed = cd.timer.elapsed_secs();
+            // "3" shows at elapsed 0-1s — capture early in that window
+            if elapsed >= 0.1 && elapsed < 0.9 && !auto_test.captured.contains("01") {
+                auto_test.captured.insert("01".to_string());
+                auto_test_capture("01-countdown-3.png", &mut commands);
+            }
+            // "GO!" shows at elapsed >= 3.0s
+            if elapsed >= 3.1 && !auto_test.captured.contains("02") {
+                auto_test.captured.insert("02".to_string());
+                auto_test_capture("02-countdown-go.png", &mut commands);
+            }
+        }
+    }
+
+    // --- Gameplay start ---
+    if current_state == GameState::Playing && !auto_test.captured.contains("03") {
+        auto_test.captured.insert("03".to_string());
+        auto_test_capture("03-gameplay-start.png", &mut commands);
+        // Initialize alive tracking now that we're playing
+        auto_test.prev_alive_count = match_state.alive_count;
+    }
+
+    // --- Track deaths (only during Playing) ---
+    if current_state == GameState::Playing {
+        // First death: alive_count drops below total_snakes
+        if match_state.alive_count < auto_test.prev_alive_count
+            && !auto_test.captured.contains("04")
+        {
+            auto_test.captured.insert("04".to_string());
+            auto_test_capture("04-first-death.png", &mut commands);
+        }
+
+        // Arena shrink: detect when bounds differ from default
+        let default_bounds = ArenaBounds::default();
+        if !auto_test.arena_shrunk && bounds.min_x > default_bounds.min_x {
+            auto_test.arena_shrunk = true;
+        }
+        if auto_test.arena_shrunk && !auto_test.captured.contains("05") {
+            auto_test.captured.insert("05".to_string());
+            auto_test_capture("05-arena-shrink.png", &mut commands);
+        }
+
+        // Late game: 3 or fewer alive
+        if match_state.alive_count <= 3 && !auto_test.captured.contains("06") {
+            auto_test.captured.insert("06".to_string());
+            auto_test_capture("06-late-game.png", &mut commands);
+        }
+
+        auto_test.prev_alive_count = match_state.alive_count;
+    }
+
+    // --- Game over phases ---
+    if current_state == GameState::GameOver {
+        if let Some(ref ga) = anim {
+            // Phase 1: title visible (phase advances to 1 after title spawns)
+            if ga.phase >= 1 && !auto_test.captured.contains("07") {
+                auto_test.captured.insert("07".to_string());
+                auto_test_capture("07-gameover-title.png", &mut commands);
+            }
+            // Phase 3: rankings visible
+            if ga.phase >= 3 && !auto_test.captured.contains("08") {
+                auto_test.captured.insert("08".to_string());
+                auto_test_capture("08-gameover-rankings.png", &mut commands);
+            }
+            // Phase 4: restart prompt visible (final state)
+            if ga.phase >= 4 && !auto_test.captured.contains("09") {
+                auto_test.captured.insert("09".to_string());
+                auto_test_capture("09-gameover-complete.png", &mut commands);
+                // Start exit timer
+                auto_test.exit_timer = Some(Timer::from_seconds(1.0, TimerMode::Once));
+            }
+        }
     }
 }

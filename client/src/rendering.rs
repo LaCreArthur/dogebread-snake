@@ -676,7 +676,7 @@ pub(crate) struct GameOverRestart;
 #[derive(Resource)]
 pub struct GameOverAnimation {
     timer: Timer,
-    phase: u8,
+    pub(crate) phase: u8,
     /// Cached data so animate system doesn't re-query snakes
     player_won: bool,
     player_lost: bool,
