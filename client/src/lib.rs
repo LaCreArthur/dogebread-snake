@@ -74,6 +74,8 @@ pub fn run() {
             enabled: std::env::var("AUTO_SCREENSHOT").is_ok(),
             counter: 0,
         })
+        .insert_resource(rendering::ScreenShake::default())
+        .insert_resource(rendering::ShrinkWarning::default())
         .init_state::<GameState>()
         .add_systems(Startup, (rendering::spawn_grid, rendering::spawn_ui, spawn_match))
         .add_systems(OnEnter(GameState::WaitingToStart), rendering::show_start_prompt)
@@ -105,6 +107,10 @@ pub fn run() {
             update_timer_text,
         ))
         .add_systems(Update, (cleanup_dead_snakes, handle_esc_quit, auto_screenshot))
+        .add_systems(Update, (
+            rendering::animate_floating_text,
+            rendering::animate_death_particles,
+        ))
         .run();
 }
 
@@ -156,11 +162,12 @@ fn game_tick(
     time: Res<Time>,
     mut tick: ResMut<GameTick>,
     mut rng: ResMut<SimpleRng>,
-    mut snake_query: Query<(Entity, &mut Snake, &SnakeId)>,
+    mut snake_query: Query<(Entity, &mut Snake, &SnakeId, &SnakeColor, Option<&PlayerControlled>)>,
     food_query: Query<(Entity, &Food)>,
     mut match_state: ResMut<MatchState>,
     mut next_state: ResMut<NextState<GameState>>,
     bounds: Res<ArenaBounds>,
+    mut shake: ResMut<rendering::ScreenShake>,
 ) {
     tick.timer.tick(time.delta());
     if !tick.timer.just_finished() {
@@ -168,7 +175,7 @@ fn game_tick(
     }
 
     let mut new_heads: Vec<(Entity, SnakeId, GridPos)> = Vec::new();
-    for (entity, mut snake, id) in &mut snake_query {
+    for (entity, mut snake, id, _, _) in &mut snake_query {
         if !snake.alive {
             continue;
         }
@@ -178,8 +185,8 @@ fn game_tick(
 
     let body_map: Vec<(SnakeId, Vec<GridPos>)> = snake_query
         .iter()
-        .filter(|(_, s, _)| s.alive)
-        .map(|(_, s, id)| {
+        .filter(|(_, s, _, _, _)| s.alive)
+        .map(|(_, s, id, _, _)| {
             (*id, s.segments.iter().skip(1).copied().collect())
         })
         .collect();
@@ -192,7 +199,7 @@ fn game_tick(
             continue;
         }
 
-        if let Ok((_, snake, _)) = snake_query.get(*entity) {
+        if let Ok((_, snake, _, _, _)) = snake_query.get(*entity) {
             if snake.self_collision() {
                 kills.push((*entity, None));
                 continue;
@@ -235,32 +242,45 @@ fn game_tick(
         .collect();
 
     for killer_id in &kill_credits {
-        for (_, mut snake, id) in &mut snake_query {
+        for (_, mut snake, id, _, _) in &mut snake_query {
             if *id == *killer_id {
                 snake.kills += 1;
             }
         }
     }
 
+    // Process deaths: trigger screen shake + death particles
     for (entity, _) in &unique_kills {
-        if let Ok((_, mut snake, _)) = snake_query.get_mut(*entity) {
+        if let Ok((_, mut snake, _, color, _)) = snake_query.get_mut(*entity) {
             if snake.alive {
+                let death_pos = snake.head().to_world();
                 snake.alive = false;
                 commands.entity(*entity).insert(DeathTimer {
                     timer: Timer::from_seconds(2.0, TimerMode::Once),
                 });
+
+                // Screen shake on any death
+                shake.intensity = 8.0;
+
+                // Death explosion particles
+                rendering::spawn_death_particles(
+                    &mut commands,
+                    death_pos,
+                    color.head,
+                    time.elapsed_secs(),
+                );
             }
         }
     }
 
-    let alive = snake_query.iter().filter(|(_, s, _)| s.alive).count() as u32;
+    let alive = snake_query.iter().filter(|(_, s, _, _, _)| s.alive).count() as u32;
     match_state.alive_count = alive;
 
     if alive <= 1 && match_state.total_snakes > 1 {
         next_state.set(GameState::GameOver);
     }
 
-    for (_entity, snake, _) in &snake_query {
+    for (_, snake, _, _, _) in &snake_query {
         if !snake.alive {
             continue;
         }
@@ -274,8 +294,8 @@ fn game_tick(
 
     let eaten_positions: Vec<GridPos> = snake_query
         .iter()
-        .filter(|(_, s, _)| s.alive)
-        .map(|(_, s, _)| s.head())
+        .filter(|(_, s, _, _, _)| s.alive)
+        .map(|(_, s, _, _, _)| s.head())
         .collect();
 
     let mut foods_eaten = 0;
@@ -284,10 +304,15 @@ fn game_tick(
             commands.entity(food_entity).despawn();
             foods_eaten += 1;
 
-            for (_, mut snake, _) in &mut snake_query {
+            for (_, mut snake, _, _, player) in &mut snake_query {
                 if snake.alive && snake.head() == food.pos {
                     snake.grow_pending += 2;
                     snake.score += 1;
+
+                    // Score popup only for the player's snake
+                    if player.is_some() {
+                        rendering::spawn_score_popup(&mut commands, food.pos.to_world());
+                    }
                 }
             }
         }
@@ -315,12 +340,14 @@ fn restart_on_space(
     mut rng: ResMut<SimpleRng>,
     mut match_state: ResMut<MatchState>,
     mut next_state: ResMut<NextState<GameState>>,
-    state: Res<State<GameState>>,
     mut bounds: ResMut<ArenaBounds>,
     mut tick: ResMut<GameTick>,
     mut match_timer: ResMut<MatchTimer>,
+    floating_text_query: Query<Entity, With<rendering::FloatingText>>,
+    particle_query: Query<Entity, With<rendering::DeathParticle>>,
+    mut shake: ResMut<rendering::ScreenShake>,
 ) {
-    let should_restart = (*state.get() == GameState::GameOver && keyboard.just_pressed(KeyCode::Space))
+    let should_restart = keyboard.just_pressed(KeyCode::Space)
         || keyboard.just_pressed(KeyCode::KeyR);
 
     if !should_restart {
@@ -342,6 +369,13 @@ fn restart_on_space(
     for entity in &overlay_query {
         commands.entity(entity).despawn();
     }
+    for entity in &floating_text_query {
+        commands.entity(entity).despawn();
+    }
+    for entity in &particle_query {
+        commands.entity(entity).despawn();
+    }
+    shake.intensity = 0.0;
 
     let positions = spawn_positions();
     for i in 0..NUM_SNAKES {
@@ -435,10 +469,18 @@ fn arena_shrink(
     time: Res<Time>,
     mut shrink_timer: ResMut<ArenaShrinkTimer>,
     mut bounds: ResMut<ArenaBounds>,
-    mut snake_query: Query<(Entity, &mut Snake)>,
+    mut snake_query: Query<(Entity, &mut Snake, &SnakeColor)>,
     food_query: Query<(Entity, &Food)>,
+    mut shake: ResMut<rendering::ScreenShake>,
+    mut warning: ResMut<rendering::ShrinkWarning>,
 ) {
     shrink_timer.timer.tick(time.delta());
+
+    // Activate shrink warning when ~2 seconds remain (timer elapsed > 10s of 12s interval)
+    let elapsed = shrink_timer.timer.elapsed_secs();
+    let duration = shrink_timer.timer.duration().as_secs_f32();
+    warning.active = bounds.can_shrink() && elapsed > (duration - 2.0);
+
     if !shrink_timer.timer.just_finished() {
         return;
     }
@@ -449,15 +491,27 @@ fn arena_shrink(
 
     bounds.shrink();
 
-    for (entity, mut snake) in &mut snake_query {
+    // Camera shake on arena shrink
+    shake.intensity = 4.0;
+
+    for (entity, mut snake, color) in &mut snake_query {
         if !snake.alive {
             continue;
         }
         if !bounds.contains(snake.head()) {
+            let death_pos = snake.head().to_world();
             snake.alive = false;
             commands.entity(entity).insert(DeathTimer {
                 timer: Timer::from_seconds(2.0, TimerMode::Once),
             });
+            // Death particles for snakes crushed by arena
+            rendering::spawn_death_particles(
+                &mut commands,
+                death_pos,
+                color.head,
+                time.elapsed_secs(),
+            );
+            shake.intensity = 8.0; // Stronger shake if someone dies from shrink
         }
     }
 

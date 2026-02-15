@@ -37,6 +37,47 @@ pub struct MinimapDot {
     pub snake_id: SnakeId,
 }
 
+/// Floating text that drifts up and fades (e.g. "+1" score popup)
+#[derive(Component)]
+pub struct FloatingText {
+    pub timer: Timer,
+}
+
+/// Death particle: flies outward, shrinks, fades
+#[derive(Component)]
+pub struct DeathParticle {
+    pub velocity: Vec2,
+    pub timer: Timer,
+}
+
+/// Screen shake resource — set intensity to trigger, decays each frame
+#[derive(Resource)]
+pub struct ScreenShake {
+    pub intensity: f32,
+    pub decay: f32,
+}
+
+impl Default for ScreenShake {
+    fn default() -> Self {
+        Self {
+            intensity: 0.0,
+            decay: 0.9,
+        }
+    }
+}
+
+/// Shrink warning — flashes danger zone cells before arena shrinks
+#[derive(Resource)]
+pub struct ShrinkWarning {
+    pub active: bool,
+}
+
+impl Default for ShrinkWarning {
+    fn default() -> Self {
+        Self { active: false }
+    }
+}
+
 const MINIMAP_SIZE: f32 = 150.0;
 const MINIMAP_DOT: f32 = 5.0;
 const MINIMAP_MARGIN: f32 = 10.0;
@@ -47,6 +88,7 @@ const COLOR_GRID_A: Color = Color::srgb(0.12, 0.12, 0.20);
 const COLOR_GRID_B: Color = Color::srgb(0.14, 0.14, 0.22);
 const COLOR_WALL: Color = Color::srgb(0.58, 0.45, 0.20); // golden-brown border
 const COLOR_DANGER: Color = Color::srgb(0.85, 0.35, 0.15); // orange-red danger zone
+const COLOR_DANGER_BRIGHT: Color = Color::srgb(1.0, 0.55, 0.25); // brighter warning flash
 const COLOR_FOOD: Color = Color::srgb(0.95, 0.73, 0.20); // golden coin
 
 
@@ -212,29 +254,38 @@ pub fn render_snakes(
     }
 }
 
-/// Render food
+/// Render food with pulsing animation
 pub fn render_food(
     mut commands: Commands,
+    time: Res<Time>,
     food_query: Query<&Food>,
-    mut food_sprite_query: Query<(Entity, &mut Transform), With<FoodSprite>>,
+    mut food_sprite_query: Query<(Entity, &mut Transform, &mut Sprite), With<FoodSprite>>,
 ) {
     let foods: Vec<&Food> = food_query.iter().collect();
 
     if foods.is_empty() {
-        for (entity, _) in &food_sprite_query {
+        for (entity, _, _) in &food_sprite_query {
             commands.entity(entity).despawn();
         }
         return;
     }
 
+    let elapsed = time.elapsed_secs();
+    let base_size = CELL_SIZE - 5.0;
+
     let mut existing: Vec<_> = food_sprite_query.iter_mut().collect();
     for (i, food) in foods.iter().enumerate() {
+        let phase_hash = (food.pos.x * 7 + food.pos.y * 13) as f32;
+        let pulse = (elapsed * 3.0 + phase_hash).sin();
+        let scale = 1.0 + pulse * 0.15; // oscillate between 0.85x and 1.15x
+        let pulsed_size = base_size * scale;
+
         if i < existing.len() {
             existing[i].1.translation = food.pos.to_world().extend(0.5);
+            existing[i].2.custom_size = Some(Vec2::splat(pulsed_size));
         } else {
-            // Golden coins/treats (circular, bright)
             commands.spawn((
-                Sprite::from_color(COLOR_FOOD, Vec2::splat(CELL_SIZE - 5.0)),
+                Sprite::from_color(COLOR_FOOD, Vec2::splat(pulsed_size)),
                 Transform::from_translation(food.pos.to_world().extend(0.5)),
                 FoodSprite,
             ));
@@ -242,7 +293,7 @@ pub fn render_food(
     }
 
     // Remove excess
-    for (entity, _) in existing.iter().skip(foods.len()) {
+    for (entity, _, _) in existing.iter().skip(foods.len()) {
         commands.entity(*entity).despawn();
     }
 }
@@ -267,11 +318,14 @@ pub fn update_alive_text(
     }
 }
 
-/// Camera follows the player's snake head during gameplay, centers during menus
+/// Camera follows the player's snake head during gameplay, centers during menus.
+/// Adds screen shake offset when ScreenShake intensity > 0.
 pub fn camera_follow(
     player_query: Query<&Snake, With<PlayerControlled>>,
     mut camera_query: Query<&mut Transform, With<Camera2d>>,
     state: Res<State<GameState>>,
+    time: Res<Time>,
+    mut shake: ResMut<ScreenShake>,
 ) {
     let Ok(mut cam_transform) = camera_query.single_mut() else {
         return;
@@ -279,7 +333,6 @@ pub fn camera_follow(
 
     let target = match state.get() {
         GameState::WaitingToStart | GameState::GameOver => {
-            // Center on grid
             Vec2::ZERO
         }
         GameState::Playing => {
@@ -296,7 +349,20 @@ pub fn camera_follow(
     };
 
     let current = cam_transform.translation.truncate();
-    let smoothed = current.lerp(target, 0.08);
+    let mut smoothed = current.lerp(target, 0.08);
+
+    // Apply screen shake
+    if shake.intensity > 0.1 {
+        let t = time.elapsed_secs();
+        let offset_x = (t * 137.0).sin() * shake.intensity;
+        let offset_y = (t * 251.0).cos() * shake.intensity;
+        smoothed.x += offset_x;
+        smoothed.y += offset_y;
+        shake.intensity *= shake.decay;
+    } else {
+        shake.intensity = 0.0;
+    }
+
     cam_transform.translation.x = smoothed.x;
     cam_transform.translation.y = smoothed.y;
 }
@@ -372,17 +438,28 @@ pub fn update_minimap(
     }
 }
 
-/// Update grid cell colors based on current arena bounds
+/// Update grid cell colors based on current arena bounds, with shrink warning flash
 pub fn update_grid_cells(
     bounds: Res<ArenaBounds>,
+    time: Res<Time>,
+    warning: Res<ShrinkWarning>,
     mut cell_query: Query<(&GridCell, &mut Sprite)>,
 ) {
-    if !bounds.is_changed() {
+    // Run every frame when warning is active (for blinking), otherwise only when bounds change
+    if !bounds.is_changed() && !warning.active {
         return;
     }
 
     let default = ArenaBounds::default();
     let has_shrunk = bounds.min_x > default.min_x;
+
+    // Compute blink factor for warning flash
+    let blink = if warning.active {
+        let t = (time.elapsed_secs() * 8.0).sin();
+        t * 0.5 + 0.5 // 0.0 to 1.0
+    } else {
+        0.0
+    };
 
     for (cell, mut sprite) in &mut cell_query {
         let pos = cell.pos;
@@ -391,17 +468,40 @@ pub fn update_grid_cells(
         if is_outer_border {
             sprite.color = COLOR_WALL;
         } else if !bounds.contains(pos) {
-            // Outside current arena = wall
             sprite.color = COLOR_WALL;
         } else if has_shrunk && bounds.wall_distance(pos) <= 1 {
-            // Danger zone: only show after arena has started shrinking
-            sprite.color = COLOR_DANGER;
+            // Danger zone: blink between normal and bright when warning active
+            if warning.active {
+                sprite.color = lerp_color(COLOR_DANGER, COLOR_DANGER_BRIGHT, blink);
+            } else {
+                sprite.color = COLOR_DANGER;
+            }
+        } else if warning.active && bounds.wall_distance(pos) <= 2 {
+            // About-to-become-danger cells flash when warning active
+            let warn_color = lerp_color(
+                if (pos.x + pos.y) % 2 == 0 { COLOR_GRID_A } else { COLOR_GRID_B },
+                COLOR_DANGER,
+                blink * 0.5,
+            );
+            sprite.color = warn_color;
         } else if (pos.x + pos.y) % 2 == 0 {
             sprite.color = COLOR_GRID_A;
         } else {
             sprite.color = COLOR_GRID_B;
         }
     }
+}
+
+/// Linearly interpolate between two sRGB colors
+fn lerp_color(a: Color, b: Color, t: f32) -> Color {
+    let a = a.to_srgba();
+    let b = b.to_srgba();
+    Color::srgba(
+        a.red + (b.red - a.red) * t,
+        a.green + (b.green - a.green) * t,
+        a.blue + (b.blue - a.blue) * t,
+        a.alpha + (b.alpha - a.alpha) * t,
+    )
 }
 
 /// Marker for spectating text
@@ -598,6 +698,94 @@ pub fn hide_game_over(
 ) {
     for entity in &overlay_query {
         commands.entity(entity).despawn();
+    }
+}
+
+/// Animate floating text: drift up, fade out, despawn when done
+pub fn animate_floating_text(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut query: Query<(Entity, &mut FloatingText, &mut Transform, &mut TextColor)>,
+) {
+    for (entity, mut ft, mut transform, mut color) in &mut query {
+        ft.timer.tick(time.delta());
+        let frac = ft.timer.fraction();
+
+        // Float upward
+        transform.translation.y += 30.0 * time.delta_secs();
+
+        // Fade out
+        let alpha = 1.0 - frac;
+        color.0 = Color::srgba(0.95, 0.85, 0.3, alpha);
+
+        if ft.timer.just_finished() {
+            commands.entity(entity).despawn();
+        }
+    }
+}
+
+/// Animate death particles: move, shrink, fade, despawn
+pub fn animate_death_particles(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut query: Query<(Entity, &mut DeathParticle, &mut Transform, &mut Sprite)>,
+) {
+    let dt = time.delta_secs();
+    for (entity, mut particle, mut transform, mut sprite) in &mut query {
+        particle.timer.tick(time.delta());
+        let frac = particle.timer.fraction();
+
+        // Move
+        transform.translation.x += particle.velocity.x * dt;
+        transform.translation.y += particle.velocity.y * dt;
+
+        // Shrink and fade
+        let remaining = 1.0 - frac;
+        transform.scale = Vec3::splat(remaining);
+        if let Some(ref mut size) = sprite.custom_size {
+            // Keep base size, scale handles shrinking
+            let _ = size;
+        }
+        let c = sprite.color.to_srgba();
+        sprite.color = Color::srgba(c.red, c.green, c.blue, remaining);
+
+        if particle.timer.just_finished() {
+            commands.entity(entity).despawn();
+        }
+    }
+}
+
+/// Spawn a "+1" floating text at a world position
+pub fn spawn_score_popup(commands: &mut Commands, world_pos: Vec2) {
+    commands.spawn((
+        Text2d::new("+1"),
+        TextFont { font_size: 16.0, ..default() },
+        TextColor(Color::srgba(0.95, 0.85, 0.3, 1.0)),
+        Transform::from_translation(world_pos.extend(10.0)),
+        FloatingText {
+            timer: Timer::from_seconds(0.8, TimerMode::Once),
+        },
+    ));
+}
+
+/// Spawn death explosion particles at a world position with the given color
+pub fn spawn_death_particles(commands: &mut Commands, world_pos: Vec2, color: Color, time_secs: f32) {
+    let num_particles = 10;
+    for i in 0..num_particles {
+        // Distribute evenly around circle, use time_secs for slight variation
+        let angle = (i as f32 / num_particles as f32) * std::f32::consts::TAU
+            + (time_secs * 31.0).sin() * 0.3;
+        let speed = 40.0 + (time_secs * (i as f32 + 1.0) * 17.0).sin().abs() * 40.0;
+        let velocity = Vec2::new(angle.cos() * speed, angle.sin() * speed);
+
+        commands.spawn((
+            Sprite::from_color(color, Vec2::splat(CELL_SIZE * 0.5)),
+            Transform::from_translation(world_pos.extend(5.0)),
+            DeathParticle {
+                velocity,
+                timer: Timer::from_seconds(1.0, TimerMode::Once),
+            },
+        ));
     }
 }
 
