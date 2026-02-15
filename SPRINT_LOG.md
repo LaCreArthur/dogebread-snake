@@ -125,3 +125,10 @@
 - **Result:** success
 - **Changes:** 8247c56 + 904d012 — AutoTestState resource, auto_test_system, 9 event-triggered screenshots
 - **Notes:** Novel approach: captures screenshots at MEANINGFUL game events instead of random intervals. 9 checkpoints: countdown-3, countdown-GO, gameplay-start, first-death, arena-shrink, late-game, gameover-title, gameover-rankings, gameover-complete. Auto-starts, auto-exits. All visual systems verified working: grid, snakes, food, HUD, kill feed, spectate, arena shrink/danger zone, camera zoom, game over phased animation. Run with `AUTO_TEST=1 cargo run --release`.
+
+## Sprint 17 — 2026-02-15 15:00
+- **Task:** Fix WASM crash + browser E2E testing
+- **Model:** opus (manual)
+- **Result:** success (WASM fixed, browser E2E verified)
+- **Changes:** b9204d2 — js_sys::Date::now() for WASM time, webgl2 feature, clippy fixes
+- **Notes:** WASM had NEVER worked in browser — two panics: (1) `std::time::SystemTime` not available on wasm32 → replaced with `js_sys::Date::now()` via cfg(target_arch), (2) WebGPU unavailable → enabled `webgl2` feature on bevy. Key learning: `cargo clean -p client` only cleans native target, not wasm32 target — must delete `target/wasm32-unknown-unknown/` directly. Browser E2E via Chrome DevTools MCP verified full game cycle: load, input, countdown, gameplay, death, spectate, game over, restart. Entity despawn warnings (~70/game) remain non-blocking. JS dispatchEvent doesn't reach Bevy/winit — CDP press_key works but is too slow for real-time play. Playwright would be the right tool for fast browser E2E.
