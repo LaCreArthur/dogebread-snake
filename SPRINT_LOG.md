@@ -41,3 +41,24 @@
 - **Result:** success
 - **Changes:** 4da7011 — 25 safe despawn conversions, bubble head effect, SPEED UP! text, new effects.rs (242 insertions, 127 deletions)
 - **Notes:** Extracted effects.rs following SOLID. Zero despawn warnings confirmed. All P0 items now complete.
+
+## Sprint 5 — 2026-02-15 12:35
+- **Task:** 10 snakes + smooth camera + arena zoom
+- **Model:** sonnet
+- **Result:** success
+- **Changes:** 4c1393b — NUM_SNAKES 6→10, NUM_FOOD 25→35, 2 interior spawn positions, delta-time camera smoothing, Projection::Orthographic zoom on arena shrink (19 insertions, 5 deletions)
+- **Notes:** Used exponential decay smoothing `1.0 - (-5.0 * delta_secs).exp()` for frame-rate-independent camera. Zoom via `Projection::Orthographic(ortho)` pattern.
+
+## Sprint 6 — 2026-02-15 12:40
+- **Task:** Dramatic game over screen with phased reveal
+- **Model:** opus
+- **Result:** success
+- **Changes:** 0274af0 — 4-phase animated game over (overlay fade, title, winner announcement, colored rankings with crown/YOU markers, stats, restart prompt), GameOverAnimation resource, 5 new marker components (274 insertions, 43 deletions)
+- **Notes:** Complex multi-phase animation system. Rankings sorted alive-first, then score/kills. Player row highlighted gold. Winner gets crown symbol. Stats footer shows total kills.
+
+## Sprint 7 — 2026-02-15 12:39
+- **Task:** Trail afterimage effect for snake movement
+- **Model:** sonnet (parallel with Sprint 6)
+- **Result:** success
+- **Changes:** c65bf66 — TrailParticle component, TrailSpawner resource (0.15s interval), spawn at segment[1], 0.4s fade, 40% initial opacity, 60% cell size (75 insertions)
+- **Notes:** Successfully ran parallel with Sprint 6 — different files (effects.rs vs rendering.rs). SOLID module separation prevented conflicts.

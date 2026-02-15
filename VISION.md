@@ -26,13 +26,13 @@ A polished, juicy snake battle royale playable in-browser that feels like a real
 - [x] Fix entity despawned warnings (race condition in cleanup)
 
 ### P1: Should Have
-- [ ] 10 snakes (currently 6)
+- [x] 10 snakes (Sprint 5)
 - [ ] Sound effects (eat, die, kill, arena shrink, countdown)
 - [ ] Player name entry before match
-- [ ] Better game over screen (dramatic reveal, stats, ranking animation)
-- [ ] Camera zoom out slightly as arena shrinks
-- [ ] Smooth camera (currently lerp is too snappy)
-- [ ] Trail/afterimage effect on fast snakes
+- [x] Better game over screen — phased reveal, colored rankings, crown (Sprint 6)
+- [x] Camera zoom out slightly as arena shrinks (Sprint 5)
+- [x] Smooth camera — delta-time exponential smoothing (Sprint 5)
+- [x] Trail/afterimage effect on fast snakes (Sprint 7)
 - [ ] WASM build verified + deployed to GitHub Pages
 
 ### P2: Nice to Have
