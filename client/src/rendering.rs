@@ -139,7 +139,7 @@ pub fn spawn_ui(mut commands: Commands) {
             font_size: 22.0,
             ..default()
         },
-        TextColor(Color::srgb(0.7, 0.7, 0.7)),
+        TextColor(Color::srgb(0.75, 0.60, 0.30)),
         Node {
             position_type: PositionType::Absolute,
             top: Val::Px(10.0),
@@ -630,7 +630,7 @@ pub fn show_start_prompt(mut commands: Commands) {
             TextColor(Color::srgb(0.7, 0.6, 0.4)),
         ));
         parent.spawn((
-            Text::new("Press arrow key to start"),
+            Text::new("press arrow key • much begin"),
             TextFont {
                 font_size: 22.0,
                 ..default()
@@ -696,14 +696,14 @@ struct RankingEntry {
 
 fn snake_color_name(id: u32) -> &'static str {
     match id % 8 {
-        0 => "Gold",
-        1 => "Green",
-        2 => "Red",
-        3 => "Blue",
-        4 => "Pink",
-        5 => "Cyan",
-        6 => "Orange",
-        7 => "Lavender",
+        0 => "Doge",
+        1 => "Cheems",
+        2 => "Bonk",
+        3 => "Shibe",
+        4 => "Floof",
+        5 => "Bork",
+        6 => "Snoot",
+        7 => "Woofer",
         _ => "???",
     }
 }
@@ -730,12 +730,12 @@ pub fn show_game_over(
     let player_lost = !player_won;
     let winner_text = if let Some((_, _, id)) = winner {
         if id.0 == 0 {
-            "VICTORY! very win! so champion!".to_string()
+            "VICTORY! very win! so champion! wow!".to_string()
         } else {
-            format!("{} doge wins! much skill!", snake_color_name(id.0))
+            format!("{} wins! much skill! so impress!", snake_color_name(id.0))
         }
     } else {
-        "wow such draw! no survivors!".to_string()
+        "wow such draw! no survivors! very dead!".to_string()
     };
 
     // Build sorted rankings: alive first, then by score desc, then kills desc
@@ -881,7 +881,7 @@ pub fn animate_game_over(
 
                 // Header
                 let header = commands.spawn((
-                    Text::new("── final rankings ──"),
+                    Text::new("── such rankings • very final ──"),
                     TextFont { font_size: 16.0, ..default() },
                     TextColor(Color::srgb(0.6, 0.55, 0.4)),
                 )).id();
@@ -910,7 +910,7 @@ pub fn animate_game_over(
                     let status = if entry.alive { " ★" } else { "" };
 
                     let row_text = format!(
-                        "{}{}  {}{}  •  {} food  •  {} kills{}",
+                        "{}{}  {}{}  •  {} noms  •  {} bonks{}",
                         rank_label, crown, entry.name, you_marker, entry.score, entry.kills, status,
                     );
 
@@ -943,7 +943,7 @@ pub fn animate_game_over(
 
                 // Stats summary
                 let stats_text = format!(
-                    "total kills: {}  •  much carnage",
+                    "total bonks: {}  •  much carnage  •  wow",
                     anim.total_kills,
                 );
                 let stats = commands.spawn((

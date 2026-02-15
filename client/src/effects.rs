@@ -90,10 +90,17 @@ pub fn animate_death_particles(
     }
 }
 
-/// Spawn a "+1" floating text at a world position
+/// Counter for cycling through score popup texts
+static POPUP_COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+const SCORE_POPUPS: &[&str] = &["wow", "+1", "such coin", "very nom", "many point"];
+
+/// Spawn a doge-themed floating text at a world position
 pub fn spawn_score_popup(commands: &mut Commands, world_pos: Vec2) {
+    let idx = POPUP_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed) as usize;
+    let text = SCORE_POPUPS[idx % SCORE_POPUPS.len()];
     commands.spawn((
-        Text2d::new("+1"),
+        Text2d::new(text),
         TextFont { font_size: 16.0, ..default() },
         TextColor(Color::srgba(0.95, 0.85, 0.3, 1.0)),
         Transform::from_translation(world_pos.extend(10.0)),
@@ -124,10 +131,10 @@ pub fn spawn_death_particles(commands: &mut Commands, world_pos: Vec2, color: Co
     }
 }
 
-/// Spawn a centered "SPEED UP!" text that fades over 1.5s
+/// Spawn a centered doge-themed speed-up text that fades over 1.5s
 pub fn spawn_speed_up_text(commands: &mut Commands) {
     commands.spawn((
-        Text::new("SPEED UP!"),
+        Text::new("much fast! wow!"),
         TextFont { font_size: 48.0, ..default() },
         TextColor(Color::srgba(1.0, 0.85, 0.2, 1.0)),
         Node {

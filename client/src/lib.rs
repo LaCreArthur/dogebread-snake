@@ -354,11 +354,11 @@ fn game_tick(
                     rendering::get_snake_color_name(killer_id.0).to_string()
                 };
                 (
-                    format!("{} killed by {}!", dead_name, killer_name),
+                    format!("{} bonked by {}! wow", dead_name, killer_name),
                     color.head,
                 )
             } else {
-                (format!("{} eliminated!", dead_name), color.head)
+                (format!("{} ded! much rip!", dead_name), color.head)
             };
             rendering::spawn_kill_feed_entry(&mut commands, message, feed_color);
         }
@@ -567,13 +567,13 @@ fn run_countdown(
 
     // Determine what text to show: 3 (0-1s), 2 (1-2s), 1 (2-3s), GO! (3-3.5s)
     let label = if elapsed < 1.0 {
-        "3"
+        "such 3"
     } else if elapsed < 2.0 {
-        "2"
+        "very 2"
     } else if elapsed < 3.0 {
-        "1"
+        "much 1"
     } else {
-        "GO!"
+        "WOW GO!"
     };
 
     // Update the text child of the countdown overlay
@@ -687,7 +687,7 @@ fn arena_shrink(
             };
             rendering::spawn_kill_feed_entry(
                 &mut commands,
-                format!("{} eliminated!", dead_name),
+                format!("{} crushed! such squish!", dead_name),
                 color.head,
             );
         }
