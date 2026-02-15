@@ -90,3 +90,38 @@
 - **Result:** success
 - **Changes:** d445c5a (untrack WASM artifacts), gh-pages branch deployed
 - **Notes:** Created public repo LaCreArthur/dogebread-snake. Untracked WASM artifacts from main (were committed before .gitignore). Created orphan gh-pages branch with pre-built web/ contents. GitHub Pages live at https://lacrearthur.github.io/dogebread-snake/. Note: 85MB WASM in git history (pre-optimization commit) triggers GitHub warning but is not blocking.
+
+## Sprint 12 — 2026-02-15 14:15
+- **Task:** Comprehensive unit tests for shared/ game logic
+- **Model:** general-purpose agent
+- **Result:** success
+- **Changes:** dbcd0cc — 62 unit tests in shared/src/game.rs
+- **Notes:** Tests cover Direction (5), GridPos (13), Snake (22), ArenaBounds (12), SnakeColor (3), Food (1), cross-entity (2). All edge cases: boundaries, 180° turns, collision detection, arena shrink limits.
+
+## Sprint 13 — 2026-02-15 14:15
+- **Task:** Headless game simulation tests — novel E2E without engine
+- **Model:** general-purpose agent (parallel with Sprint 12)
+- **Result:** success
+- **Changes:** 4de0db0 — 10 simulation tests in shared/tests/simulation.rs
+- **Notes:** Novel approach: complete game simulation as pure data operations, no Bevy/ECS. GameSim engine (~200 lines) runs full battle royale games with seeded RNG. Tests: game termination (50 games), score validity (20 games), dead snake immutability, statistical fairness (100 games, <40% win rate per snake). All 10 tests pass in <10ms total. Key insight: decoupled game logic from engine makes fast deterministic testing trivial.
+
+## Sprint 14 — 2026-02-15 14:15
+- **Task:** CI pipeline — tests, clippy, WASM build check
+- **Model:** general-purpose agent (parallel with Sprints 12-13)
+- **Result:** success
+- **Changes:** 20e3b7d — .github/workflows/ci.yml, rustfmt.toml
+- **Notes:** 3 parallel CI jobs: test (cargo test --workspace), lint (clippy -D warnings + fmt check), wasm-build (compile + wasm-bindgen + size check <25MB). Triggered on push to master + PRs. Also added rustfmt.toml (edition 2024, max_width 120).
+
+## Sprint 15 — 2026-02-15 14:30
+- **Task:** Fix all clippy warnings (19 issues) to pass CI
+- **Model:** opus (manual)
+- **Result:** success
+- **Changes:** c4901d1 — 4 files, 87 insertions, 91 deletions
+- **Notes:** Collapsed nested if/if-let into Rust 2024 let-chains. Replaced iter().any() with contains(). Derived Default for ShrinkWarning. Combined identical if/else branches. Added #[allow(too_many_arguments)] for Bevy system functions (ECS parameters). All 72 tests pass + clippy clean.
+
+## Sprint 16 — 2026-02-15 14:45
+- **Task:** Event-driven visual testing — AUTO_TEST mode
+- **Model:** general-purpose agent + opus (visual review)
+- **Result:** success
+- **Changes:** 8247c56 + 904d012 — AutoTestState resource, auto_test_system, 9 event-triggered screenshots
+- **Notes:** Novel approach: captures screenshots at MEANINGFUL game events instead of random intervals. 9 checkpoints: countdown-3, countdown-GO, gameplay-start, first-death, arena-shrink, late-game, gameover-title, gameover-rankings, gameover-complete. Auto-starts, auto-exits. All visual systems verified working: grid, snakes, food, HUD, kill feed, spectate, arena shrink/danger zone, camera zoom, game over phased animation. Run with `AUTO_TEST=1 cargo run --release`.
