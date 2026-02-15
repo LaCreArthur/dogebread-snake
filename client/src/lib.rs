@@ -8,8 +8,8 @@ use bevy::render::view::screenshot::{save_to_disk, Screenshot};
 use shared::constants::*;
 use shared::game::*;
 
-const NUM_SNAKES: u32 = 6;
-const NUM_FOOD: usize = 25;
+const NUM_SNAKES: u32 = 10;
+const NUM_FOOD: usize = 35;
 const ARENA_SHRINK_INTERVAL: f32 = 12.0;
 const SPEED_INCREASE_INTERVAL: f32 = 20.0;
 
@@ -142,6 +142,8 @@ fn spawn_positions() -> Vec<(i32, i32, Direction)> {
         (10, GRID_HEIGHT / 2, Direction::Right),
         (GRID_WIDTH - 11, GRID_HEIGHT / 2, Direction::Left),
         (GRID_WIDTH / 2, GRID_HEIGHT - 11, Direction::Down),
+        (GRID_WIDTH / 3, GRID_HEIGHT / 3, Direction::Right),
+        (2 * GRID_WIDTH / 3, 2 * GRID_HEIGHT / 3, Direction::Left),
     ]
 }
 

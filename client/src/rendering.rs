@@ -332,14 +332,16 @@ pub fn update_alive_text(
 
 /// Camera follows the player's snake head during gameplay, centers during menus.
 /// Adds screen shake offset when ScreenShake intensity > 0.
+/// Zooms out as arena shrinks.
 pub fn camera_follow(
     player_query: Query<&Snake, With<PlayerControlled>>,
-    mut camera_query: Query<&mut Transform, With<Camera2d>>,
+    mut camera_query: Query<(&mut Transform, &mut Projection), With<Camera2d>>,
     state: Res<State<GameState>>,
     time: Res<Time>,
     mut shake: ResMut<ScreenShake>,
+    bounds: Res<ArenaBounds>,
 ) {
-    let Ok(mut cam_transform) = camera_query.single_mut() else {
+    let Ok((mut cam_transform, mut projection)) = camera_query.single_mut() else {
         return;
     };
 
@@ -361,7 +363,8 @@ pub fn camera_follow(
     };
 
     let current = cam_transform.translation.truncate();
-    let mut smoothed = current.lerp(target, 0.08);
+    let smoothing = 1.0 - (-5.0 * time.delta_secs()).exp();
+    let mut smoothed = current.lerp(target, smoothing);
 
     // Apply screen shake
     if shake.intensity > 0.1 {
@@ -377,6 +380,15 @@ pub fn camera_follow(
 
     cam_transform.translation.x = smoothed.x;
     cam_transform.translation.y = smoothed.y;
+
+    // Arena zoom: zoom out as arena shrinks
+    if let Projection::Orthographic(ortho) = projection.as_mut() {
+        let bounds_width = (bounds.max_x - bounds.min_x) as f32;
+        let arena_fraction = bounds_width / (GRID_WIDTH as f32 - 2.0);
+        let target_scale = 1.0 + (1.0 - arena_fraction) * 0.5;
+        let scale_smoothing = 1.0 - (-3.0 * time.delta_secs()).exp();
+        ortho.scale = ortho.scale + (target_scale - ortho.scale) * scale_smoothing;
+    }
 }
 
 /// Update minimap dots to show snake positions
