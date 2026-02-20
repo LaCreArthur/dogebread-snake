@@ -2,10 +2,7 @@ use bevy::prelude::*;
 use shared::game::*;
 
 /// Read keyboard input and queue direction changes on the player's snake
-pub fn handle_input(
-    keyboard: Res<ButtonInput<KeyCode>>,
-    mut snake_query: Query<&mut Snake, With<PlayerControlled>>,
-) {
+pub fn handle_input(keyboard: Res<ButtonInput<KeyCode>>, mut snake_query: Query<&mut Snake, With<PlayerControlled>>) {
     let Ok(mut snake) = snake_query.single_mut() else {
         return;
     };
@@ -14,8 +11,7 @@ pub fn handle_input(
         return;
     }
 
-    let new_dir = if keyboard.just_pressed(KeyCode::ArrowUp) || keyboard.just_pressed(KeyCode::KeyW)
-    {
+    let new_dir = if keyboard.just_pressed(KeyCode::ArrowUp) || keyboard.just_pressed(KeyCode::KeyW) {
         Some(Direction::Up)
     } else if keyboard.just_pressed(KeyCode::ArrowDown) || keyboard.just_pressed(KeyCode::KeyS) {
         Some(Direction::Down)

@@ -4,281 +4,21 @@
 //! Deterministic (seeded RNG), fast (no rendering), catches bugs that
 //! unit tests miss because they test in isolation.
 
-use shared::constants::*;
+mod harness;
+
+use harness::*;
 use shared::game::*;
 use std::collections::VecDeque;
 
-// ---------------------------------------------------------------------------
-// Seeded RNG (PCG-style, deterministic across platforms)
-// ---------------------------------------------------------------------------
-
-struct TestRng {
-    state: u64,
-}
-
-impl TestRng {
-    fn new(seed: u64) -> Self {
-        Self { state: seed }
-    }
-
-    fn next_u32(&mut self) -> u32 {
-        self.state = self
-            .state
-            .wrapping_mul(6364136223846793005)
-            .wrapping_add(1442695040888963407);
-        (self.state >> 33) as u32
-    }
-
-    fn range(&mut self, min: i32, max: i32) -> i32 {
-        assert!(max > min, "range: max must be > min");
-        min + (self.next_u32() % (max - min) as u32) as i32
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Simulation engine
-// ---------------------------------------------------------------------------
-
-struct GameSim {
-    snakes: Vec<Snake>,
-    food: Vec<Food>,
-    bounds: ArenaBounds,
-    rng: TestRng,
-    tick: u32,
-    shrink_interval: u32,
-    winner: Option<usize>,
-}
-
-impl GameSim {
-    /// Spawn `n` snakes evenly around the arena center.
-    fn new(num_snakes: usize, num_food: usize, seed: u64, shrink_interval: u32) -> Self {
-        let mut rng = TestRng::new(seed);
-        let bounds = ArenaBounds::default();
-
-        let cx = (bounds.min_x + bounds.max_x) / 2;
-        let cy = (bounds.min_y + bounds.max_y) / 2;
-        let radius = ((bounds.max_x - bounds.min_x) / 3).max(8);
-
-        let mut snakes = Vec::with_capacity(num_snakes);
-        for i in 0..num_snakes {
-            // Distribute spawn points in a ring
-            let angle_steps = num_snakes.max(1);
-            let angle_idx = i % angle_steps;
-            let (dx, dy) = match angle_idx % 4 {
-                0 => (radius, (i as i32 * 3) % radius),
-                1 => (-(radius), (i as i32 * 3) % radius),
-                2 => ((i as i32 * 3) % radius, radius),
-                3 => ((i as i32 * 3) % radius, -(radius)),
-                _ => unreachable!(),
-            };
-            let sx = (cx + dx).clamp(
-                bounds.min_x + INITIAL_SNAKE_LENGTH as i32 + 1,
-                bounds.max_x - INITIAL_SNAKE_LENGTH as i32 - 1,
-            );
-            let sy = (cy + dy).clamp(
-                bounds.min_y + INITIAL_SNAKE_LENGTH as i32 + 1,
-                bounds.max_y - INITIAL_SNAKE_LENGTH as i32 - 1,
-            );
-
-            let dir = Direction::ALL[rng.next_u32() as usize % 4];
-            snakes.push(Snake::new(sx, sy, dir));
-        }
-
-        let mut sim = GameSim {
-            snakes,
-            food: Vec::new(),
-            bounds,
-            rng,
-            tick: 0,
-            shrink_interval,
-            winner: None,
-        };
-
-        for _ in 0..num_food {
-            sim.spawn_food();
-        }
-
-        sim
-    }
-
-    fn spawn_food(&mut self) {
-        for _ in 0..100 {
-            let x = self.rng.range(self.bounds.min_x, self.bounds.max_x);
-            let y = self.rng.range(self.bounds.min_y, self.bounds.max_y);
-            let pos = GridPos::new(x, y);
-
-            // Don't spawn on any snake
-            let on_snake = self.snakes.iter().any(|s| s.occupies(pos));
-            let on_food = self.food.iter().any(|f| f.pos == pos);
-            if !on_snake && !on_food {
-                self.food.push(Food::new(x, y));
-                return;
-            }
-        }
-        // Give up after 100 attempts (arena might be full)
-    }
-
-    fn alive_count(&self) -> usize {
-        self.snakes.iter().filter(|s| s.alive).count()
-    }
-
-    fn is_over(&self) -> bool {
-        self.alive_count() <= 1
-    }
-
-    /// Pick a random valid direction for an AI snake (avoids 180-degree turns).
-    fn random_direction_for(&mut self, snake_idx: usize) -> Direction {
-        let current = self.snakes[snake_idx].direction;
-        let choices: Vec<Direction> = Direction::ALL
-            .iter()
-            .copied()
-            .filter(|&d| d != current.opposite())
-            .collect();
-        choices[self.rng.next_u32() as usize % choices.len()]
-    }
-
-    /// Run one simulation tick.
-    fn step(&mut self) {
-        self.tick += 1;
-
-        // --- Arena shrink ---
-        if self.shrink_interval > 0 && self.tick % self.shrink_interval == 0 {
-            self.bounds.shrink();
-        }
-
-        // --- Choose directions for alive snakes ---
-        let n = self.snakes.len();
-        let mut directions = Vec::with_capacity(n);
-        for i in 0..n {
-            if self.snakes[i].alive {
-                let dir = self.random_direction_for(i);
-                directions.push(Some(dir));
-            } else {
-                directions.push(None);
-            }
-        }
-
-        // --- Apply directions and move ---
-        let mut new_heads: Vec<Option<GridPos>> = Vec::with_capacity(n);
-        for i in 0..n {
-            if let Some(dir) = directions[i] {
-                self.snakes[i].set_direction(dir);
-                let head = self.snakes[i].step();
-                new_heads.push(Some(head));
-            } else {
-                new_heads.push(None);
-            }
-        }
-
-        // --- Collision detection ---
-        let mut kills = vec![false; n];
-
-        for i in 0..n {
-            if !self.snakes[i].alive {
-                continue;
-            }
-            let head = self.snakes[i].head();
-
-            // Out of bounds
-            if !self.bounds.contains(head) {
-                kills[i] = true;
-                continue;
-            }
-
-            // Self-collision
-            if self.snakes[i].self_collision() {
-                kills[i] = true;
-                continue;
-            }
-
-            // Collision with other snakes' bodies
-            for j in 0..n {
-                if i == j || !self.snakes[j].alive {
-                    continue;
-                }
-                if self.snakes[j].body_collision(head) {
-                    kills[i] = true;
-                    // Credit the kill to snake j
-                    self.snakes[j].kills += 1;
-                    break;
-                }
-            }
-        }
-
-        // Head-to-head collisions
-        for i in 0..n {
-            if !self.snakes[i].alive || kills[i] {
-                continue;
-            }
-            for j in (i + 1)..n {
-                if !self.snakes[j].alive || kills[j] {
-                    continue;
-                }
-                if self.snakes[i].head() == self.snakes[j].head() {
-                    kills[i] = true;
-                    kills[j] = true;
-                }
-            }
-        }
-
-        // Process deaths
-        for i in 0..n {
-            if kills[i] {
-                self.snakes[i].alive = false;
-            }
-        }
-
-        // --- Food eating ---
-        let mut eaten_indices = Vec::new();
-        for i in 0..n {
-            if !self.snakes[i].alive {
-                continue;
-            }
-            let head = self.snakes[i].head();
-            for (fi, food) in self.food.iter().enumerate() {
-                if food.pos == head {
-                    self.snakes[i].grow_pending += 1;
-                    self.snakes[i].score += 1;
-                    eaten_indices.push(fi);
-                    break;
-                }
-            }
-        }
-        // Remove eaten food (reverse order to preserve indices)
-        eaten_indices.sort_unstable();
-        eaten_indices.dedup();
-        for &fi in eaten_indices.iter().rev() {
-            self.food.swap_remove(fi);
-        }
-        // Respawn eaten food
-        for _ in 0..eaten_indices.len() {
-            self.spawn_food();
-        }
-
-        // --- Check win condition ---
-        if self.alive_count() <= 1 {
-            self.winner = self.snakes.iter().position(|s| s.alive);
-        }
-    }
-
-    /// Run the full simulation until game over or max ticks.
-    fn run(&mut self, max_ticks: u32) -> u32 {
-        while self.tick < max_ticks && !self.is_over() {
-            self.step();
-        }
-        self.tick
-    }
-}
-
 // ===========================================================================
-// Tests
+// Original tests (refactored to use harness)
 // ===========================================================================
 
 #[test]
 fn test_game_always_terminates() {
     for seed in 0..50u64 {
-        let mut sim = GameSim::new(10, 15, seed, 30);
-        let ticks = sim.run(2000);
+        let mut sim = SimConfig::new().seed(seed).build();
+        let ticks = sim.run_with_invariants();
         assert!(
             sim.alive_count() <= 1,
             "Game with seed {} did not terminate: {} alive after {} ticks",
@@ -292,11 +32,9 @@ fn test_game_always_terminates() {
 #[test]
 fn test_scores_never_negative() {
     for seed in 0..20u64 {
-        let mut sim = GameSim::new(10, 15, seed + 1000, 30);
-        sim.run(2000);
+        let mut sim = SimConfig::new().seed(seed + 1000).build();
+        sim.run_with_invariants();
         for (i, snake) in sim.snakes.iter().enumerate() {
-            // score and kills are u32, so they can't be negative at the type level,
-            // but we assert they exist and haven't wrapped around to huge values
             assert!(
                 snake.score < 10_000,
                 "Snake {} in game seed {} has implausible score: {}",
@@ -317,23 +55,19 @@ fn test_scores_never_negative() {
 
 #[test]
 fn test_dead_snakes_dont_move() {
-    let mut sim = GameSim::new(10, 15, 42, 30);
+    let mut sim = SimConfig::new().seed(42).build();
 
     let mut dead_snapshots: Vec<(usize, VecDeque<GridPos>)> = Vec::new();
 
     for _ in 0..500 {
-        sim.step();
+        sim.step_with_invariants();
 
-        // Record newly dead snakes
         for i in 0..sim.snakes.len() {
-            if !sim.snakes[i].alive
-                && !dead_snapshots.iter().any(|(idx, _)| *idx == i)
-            {
+            if !sim.snakes[i].alive && !dead_snapshots.iter().any(|(idx, _)| *idx == i) {
                 dead_snapshots.push((i, sim.snakes[i].segments.clone()));
             }
         }
 
-        // Assert all previously-dead snakes haven't moved
         for (idx, snapshot) in &dead_snapshots {
             assert_eq!(
                 sim.snakes[*idx].segments, *snapshot,
@@ -347,7 +81,6 @@ fn test_dead_snakes_dont_move() {
         }
     }
 
-    // Verify we actually observed at least one death
     assert!(
         !dead_snapshots.is_empty(),
         "No snake died during the simulation — test is vacuously true"
@@ -356,16 +89,14 @@ fn test_dead_snakes_dont_move() {
 
 #[test]
 fn test_arena_shrink_kills_outside_snakes() {
-    // Place a snake right at the edge of default bounds
     let bounds = ArenaBounds::default();
-    let edge_x = bounds.max_x - 1; // rightmost valid column
+    let edge_x = bounds.max_x - 1;
     let mid_y = (bounds.min_y + bounds.max_y) / 2;
 
     let mut snake = Snake::new(edge_x, mid_y, Direction::Right);
     assert!(snake.alive);
     assert!(bounds.contains(snake.head()));
 
-    // Shrink the arena — max_x decreases by 1, so edge_x is now OUT of bounds
     let mut shrunk = bounds;
     shrunk.shrink();
     assert!(
@@ -375,8 +106,6 @@ fn test_arena_shrink_kills_outside_snakes() {
         shrunk.max_x
     );
 
-    // In our sim, out-of-bounds → death
-    // Simulate the kill logic:
     if !shrunk.contains(snake.head()) {
         snake.alive = false;
     }
@@ -385,7 +114,6 @@ fn test_arena_shrink_kills_outside_snakes() {
 
 #[test]
 fn test_food_eating_grows_snake() {
-    // Snake heading Right at (10, 10), place food at (11, 10)
     let mut snake = Snake::new(10, 10, Direction::Right);
     let food = Food::new(11, 10);
 
@@ -393,11 +121,9 @@ fn test_food_eating_grows_snake() {
     let initial_grow = snake.grow_pending;
     let initial_len = snake.segments.len();
 
-    // Step the snake forward
     let new_head = snake.step();
     assert_eq!(new_head, food.pos, "Snake head should be on the food");
 
-    // Process eating
     if new_head == food.pos {
         snake.grow_pending += 1;
         snake.score += 1;
@@ -410,7 +136,6 @@ fn test_food_eating_grows_snake() {
         "grow_pending should increase by 1"
     );
 
-    // Step again — the snake should be longer because of grow_pending
     snake.step();
     assert_eq!(
         snake.segments.len(),
@@ -421,29 +146,21 @@ fn test_food_eating_grows_snake() {
 
 #[test]
 fn test_self_collision_kills() {
-    // Build a snake that will loop back on itself.
-    // Start going Right, then Down, then Left, then Up → loops into its own body.
     let mut snake = Snake::new(20, 20, Direction::Right);
-
-    // Make the snake longer so it can hit itself
     snake.grow_pending = 5;
 
-    // Move Right a few times to grow
-    snake.step(); // (21,20)
-    snake.step(); // (22,20)
-    snake.step(); // (23,20)
+    snake.step();
+    snake.step();
+    snake.step();
 
-    // Now turn Down
     snake.set_direction(Direction::Down);
-    snake.step(); // (23,19)
+    snake.step();
 
-    // Turn Left
     snake.set_direction(Direction::Left);
-    snake.step(); // (22,19)
+    snake.step();
 
-    // Turn Up — this should move into the body
     snake.set_direction(Direction::Up);
-    snake.step(); // (22,20) — occupied by body!
+    snake.step();
 
     assert!(
         snake.self_collision(),
@@ -453,18 +170,15 @@ fn test_self_collision_kills() {
 
 #[test]
 fn test_head_to_head_collision() {
-    // Two snakes facing each other, one cell apart
     let mut snake_a = Snake::new(15, 20, Direction::Right);
     let mut snake_b = Snake::new(17, 20, Direction::Left);
 
-    // After one step each, both heads should be at (16, 20)
     let head_a = snake_a.step();
     let head_b = snake_b.step();
 
     assert_eq!(head_a, head_b, "Both heads should meet at the same cell");
     assert_eq!(head_a, GridPos::new(16, 20));
 
-    // In the sim, head-to-head → both die
     let both_collide = head_a == head_b;
     assert!(both_collide, "Head-to-head collision should be detected");
 }
@@ -473,7 +187,6 @@ fn test_head_to_head_collision() {
 fn test_no_180_degree_turn() {
     let mut snake = Snake::new(20, 20, Direction::Right);
 
-    // Try to go Left (opposite) — should be ignored
     snake.set_direction(Direction::Left);
     assert_eq!(
         snake.next_direction,
@@ -481,15 +194,9 @@ fn test_no_180_degree_turn() {
         "180-degree turn should be rejected"
     );
 
-    // Try valid turn
     snake.set_direction(Direction::Up);
-    assert_eq!(
-        snake.next_direction,
-        Direction::Up,
-        "90-degree turn should be accepted"
-    );
+    assert_eq!(snake.next_direction, Direction::Up, "90-degree turn should be accepted");
 
-    // Step and verify direction is Up
     let head = snake.step();
     assert_eq!(snake.direction, Direction::Up);
     assert_eq!(head, GridPos::new(20, 21));
@@ -500,7 +207,6 @@ fn test_arena_shrink_stops_at_minimum() {
     let mut bounds = ArenaBounds::default();
     let initial_width = bounds.max_x - bounds.min_x;
 
-    // Shrink until we can't anymore
     let mut shrink_count = 0;
     while bounds.can_shrink() {
         bounds.shrink();
@@ -512,18 +218,13 @@ fn test_arena_shrink_stops_at_minimum() {
 
     assert_eq!(final_width, 6, "Arena should stop shrinking at width 6");
     assert_eq!(final_height, 6, "Arena should stop shrinking at height 6");
-    assert!(
-        !bounds.can_shrink(),
-        "can_shrink() should return false at minimum size"
-    );
+    assert!(!bounds.can_shrink(), "can_shrink() should return false at minimum size");
 
-    // Shrink one more time — should be a no-op
     let before = bounds;
     bounds.shrink();
     assert_eq!(bounds.min_x, before.min_x, "shrink() should be a no-op at minimum");
     assert_eq!(bounds.max_x, before.max_x, "shrink() should be a no-op at minimum");
 
-    // Verify the math: default is 58 wide (1..59), shrink to 6 wide = 26 shrinks
     assert_eq!(
         shrink_count,
         (initial_width - 6) / 2,
@@ -538,8 +239,8 @@ fn test_statistical_fairness() {
     let mut win_counts = vec![0u32; num_snakes];
 
     for seed in 0..num_games as u64 {
-        let mut sim = GameSim::new(num_snakes, 15, seed + 5000, 30);
-        sim.run(2000);
+        let mut sim = SimConfig::new().snakes(num_snakes).seed(seed + 5000).build();
+        sim.run_with_invariants();
 
         if let Some(winner) = sim.winner {
             win_counts[winner] += 1;
@@ -556,4 +257,268 @@ fn test_statistical_fairness() {
         num_games,
         win_counts
     );
+}
+
+// ===========================================================================
+// New scenarios
+// ===========================================================================
+
+#[test]
+fn test_speed_increase_mechanics() {
+    // Speed increase every 10 ticks, with 0.85x multiplier each time
+    let mut sim = SimConfig::new()
+        .snakes(2)
+        .food(5)
+        .seed(99)
+        .speed_increase_interval(10)
+        .max_ticks(100)
+        .build();
+
+    assert_eq!(sim.tick_interval_factor, 1.0, "initial factor should be 1.0");
+
+    // Run 10 ticks — first speed increase
+    for _ in 0..10 {
+        sim.step_with_invariants();
+    }
+    let after_first = sim.tick_interval_factor;
+    assert!(
+        (after_first - 0.85).abs() < 0.001,
+        "After first speed increase: expected ~0.85, got {}",
+        after_first
+    );
+
+    // Run 10 more — second speed increase
+    for _ in 0..10 {
+        sim.step_with_invariants();
+    }
+    let after_second = sim.tick_interval_factor;
+    assert!(
+        (after_second - 0.85 * 0.85).abs() < 0.001,
+        "After second speed increase: expected ~{}, got {}",
+        0.85 * 0.85,
+        after_second
+    );
+
+    // Floor at 0.48
+    let mut sim = SimConfig::new()
+        .snakes(2)
+        .food(5)
+        .seed(100)
+        .speed_increase_interval(1)
+        .max_ticks(200)
+        .build();
+    sim.run_with_invariants();
+    assert!(
+        sim.tick_interval_factor >= 0.48,
+        "Speed factor should floor at 0.48, got {}",
+        sim.tick_interval_factor
+    );
+}
+
+#[test]
+fn test_kill_attribution_correct() {
+    // Run several games, verify every kill in death_log has a valid killer
+    // when the death was caused by body collision (not wall/self)
+    for seed in 0..20u64 {
+        let mut sim = SimConfig::new().snakes(10).food(15).seed(seed + 2000).build();
+        sim.run_with_invariants();
+
+        for event in &sim.death_log {
+            if let Some(killer_idx) = event.killer {
+                assert!(
+                    killer_idx < sim.snakes.len(),
+                    "Killer index {} out of bounds (seed {})",
+                    killer_idx,
+                    seed
+                );
+                assert_ne!(
+                    killer_idx, event.snake_idx,
+                    "Snake {} credited as its own killer (seed {})",
+                    killer_idx, seed
+                );
+            }
+        }
+
+        // Verify total kills across snakes matches death_log attributed kills
+        let logged_kills = sim.death_log.iter().filter(|e| e.killer.is_some()).count() as u32;
+        let snake_kills: u32 = sim.snakes.iter().map(|s| s.kills).sum();
+        assert_eq!(
+            logged_kills, snake_kills,
+            "Kill count mismatch: death_log={}, snakes={} (seed {})",
+            logged_kills, snake_kills, seed
+        );
+    }
+}
+
+#[test]
+fn test_food_distribution_fairness() {
+    // Over N games with SeekFood AI, no snake should get >2x average food
+    let num_games = 50;
+    let num_snakes = 10;
+    let mut total_food_per_snake = vec![0u32; num_snakes];
+
+    for seed in 0..num_games as u64 {
+        let mut sim = SimConfig::new()
+            .snakes(num_snakes)
+            .food(20)
+            .seed(seed + 3000)
+            .ai_strategy(AiStrategy::SeekFood)
+            .build();
+        sim.run_with_invariants();
+
+        for (i, snake) in sim.snakes.iter().enumerate() {
+            total_food_per_snake[i] += snake.score;
+        }
+    }
+
+    let total: u32 = total_food_per_snake.iter().sum();
+    let avg = total as f64 / num_snakes as f64;
+    let max_food = *total_food_per_snake.iter().max().unwrap();
+
+    assert!(
+        (max_food as f64) <= avg * 2.0,
+        "Food distribution unfair: max={}, avg={:.1}. Distribution: {:?}",
+        max_food,
+        avg,
+        total_food_per_snake
+    );
+}
+
+#[test]
+fn test_all_spawns_in_bounds() {
+    for seed in 0..100u64 {
+        let sim = SimConfig::new().snakes(10).seed(seed).build();
+
+        for (i, snake) in sim.snakes.iter().enumerate() {
+            for (seg_idx, seg) in snake.segments.iter().enumerate() {
+                assert!(
+                    sim.bounds.contains(*seg),
+                    "Seed {}: snake {} segment {} at ({},{}) is out of bounds {:?}",
+                    seed,
+                    i,
+                    seg_idx,
+                    seg.x,
+                    seg.y,
+                    (sim.bounds.min_x, sim.bounds.min_y, sim.bounds.max_x, sim.bounds.max_y)
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn test_arena_minimum_still_playable() {
+    // Shrink arena to minimum, then verify snakes can still move
+    let mut sim = SimConfig::new()
+        .snakes(2)
+        .food(3)
+        .seed(77)
+        .shrink_interval(1) // shrink every tick — aggressive
+        .max_ticks(500)
+        .build();
+
+    // Run until arena is at minimum
+    while sim.bounds.can_shrink() {
+        sim.step_with_invariants();
+    }
+
+    let width = sim.bounds.max_x - sim.bounds.min_x;
+    let height = sim.bounds.max_y - sim.bounds.min_y;
+    assert_eq!(width, 6);
+    assert_eq!(height, 6);
+
+    // Keep going — game should still progress (snakes move, die, or win)
+    let tick_at_min = sim.tick;
+    for _ in 0..100 {
+        if sim.is_over() {
+            break;
+        }
+        sim.step_with_invariants();
+    }
+
+    // Either the game ended or snakes survived some ticks at minimum size
+    assert!(
+        sim.tick > tick_at_min || sim.is_over(),
+        "Game stalled at minimum arena size"
+    );
+}
+
+#[test]
+fn test_simultaneous_multi_death() {
+    // Run many games and check that multi-death (3+ same tick) can occur
+    let mut multi_death_found = false;
+
+    for seed in 0..200u64 {
+        let mut sim = SimConfig::new()
+            .snakes(10)
+            .food(5)
+            .seed(seed + 4000)
+            .shrink_interval(10) // aggressive shrink to force crowding
+            .build();
+        sim.run_with_invariants();
+
+        // Check death_log for 3+ deaths on same tick
+        let mut deaths_per_tick: std::collections::HashMap<u32, u32> = std::collections::HashMap::new();
+        for event in &sim.death_log {
+            *deaths_per_tick.entry(event.tick).or_insert(0) += 1;
+        }
+
+        if deaths_per_tick.values().any(|&count| count >= 3) {
+            multi_death_found = true;
+            break;
+        }
+    }
+
+    assert!(
+        multi_death_found,
+        "No simultaneous multi-death (3+) observed in 200 seeded games — simulation may be broken"
+    );
+}
+
+// ===========================================================================
+// Determinism
+// ===========================================================================
+
+#[test]
+fn test_determinism_same_seed_same_result() {
+    for seed in 0..20u64 {
+        let mut sim_a = SimConfig::new().seed(seed).build();
+        let mut sim_b = SimConfig::new().seed(seed).build();
+
+        sim_a.run_with_invariants();
+        sim_b.run_with_invariants();
+
+        assert_eq!(
+            sim_a.death_log.len(),
+            sim_b.death_log.len(),
+            "seed {}: death_log length differs ({} vs {})",
+            seed,
+            sim_a.death_log.len(),
+            sim_b.death_log.len()
+        );
+
+        for (i, (a, b)) in sim_a.death_log.iter().zip(&sim_b.death_log).enumerate() {
+            assert_eq!(
+                a.tick, b.tick,
+                "seed {}: death {} tick differs ({} vs {})",
+                seed, i, a.tick, b.tick
+            );
+            assert_eq!(
+                a.snake_idx, b.snake_idx,
+                "seed {}: death {} snake differs ({} vs {})",
+                seed, i, a.snake_idx, b.snake_idx
+            );
+            assert_eq!(
+                a.killer, b.killer,
+                "seed {}: death {} killer differs ({:?} vs {:?})",
+                seed, i, a.killer, b.killer
+            );
+        }
+
+        assert_eq!(
+            sim_a.winner, sim_b.winner,
+            "seed {}: winner differs ({:?} vs {:?})",
+            seed, sim_a.winner, sim_b.winner
+        );
+    }
 }

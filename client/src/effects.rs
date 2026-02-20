@@ -108,7 +108,10 @@ pub fn spawn_score_popup(commands: &mut Commands, world_pos: Vec2) {
     let text = SCORE_POPUPS[idx % SCORE_POPUPS.len()];
     commands.spawn((
         Text2d::new(text),
-        TextFont { font_size: 16.0, ..default() },
+        TextFont {
+            font_size: 16.0,
+            ..default()
+        },
         TextColor(Color::srgba(0.95, 0.85, 0.3, 1.0)),
         Transform::from_translation(world_pos.extend(10.0)),
         FloatingText {
@@ -122,8 +125,7 @@ pub fn spawn_death_particles(commands: &mut Commands, world_pos: Vec2, color: Co
     let num_particles = 10;
     for i in 0..num_particles {
         // Distribute evenly around circle, use time_secs for slight variation
-        let angle = (i as f32 / num_particles as f32) * std::f32::consts::TAU
-            + (time_secs * 31.0).sin() * 0.3;
+        let angle = (i as f32 / num_particles as f32) * std::f32::consts::TAU + (time_secs * 31.0).sin() * 0.3;
         let speed = 40.0 + (time_secs * (i as f32 + 1.0) * 17.0).sin().abs() * 40.0;
         let velocity = Vec2::new(angle.cos() * speed, angle.sin() * speed);
 
@@ -142,8 +144,7 @@ pub fn spawn_death_particles(commands: &mut Commands, world_pos: Vec2, color: Co
 pub fn spawn_eat_particles(commands: &mut Commands, world_pos: Vec2, time_secs: f32) {
     let num = 6;
     for i in 0..num {
-        let angle = (i as f32 / num as f32) * std::f32::consts::TAU
-            + (time_secs * 47.0).sin() * 0.5;
+        let angle = (i as f32 / num as f32) * std::f32::consts::TAU + (time_secs * 47.0).sin() * 0.5;
         let speed = 50.0 + (time_secs * (i as f32 + 1.0) * 23.0).sin().abs() * 30.0;
         let velocity = Vec2::new(angle.cos() * speed, angle.sin() * speed);
 
@@ -191,7 +192,10 @@ pub fn animate_eat_particles(
 pub fn spawn_speed_up_text(commands: &mut Commands) {
     commands.spawn((
         Text::new("much fast! wow!"),
-        TextFont { font_size: 48.0, ..default() },
+        TextFont {
+            font_size: 48.0,
+            ..default()
+        },
         TextColor(Color::srgba(1.0, 0.85, 0.2, 1.0)),
         Node {
             position_type: PositionType::Absolute,
@@ -246,10 +250,7 @@ pub fn spawn_trail_particles(
         let trail_pos = snake.segments[1]; // where head just was
         let c = color.body.to_srgba();
         commands.spawn((
-            Sprite::from_color(
-                Color::srgba(c.red, c.green, c.blue, 0.4),
-                Vec2::splat(CELL_SIZE * 0.6),
-            ),
+            Sprite::from_color(Color::srgba(c.red, c.green, c.blue, 0.4), Vec2::splat(CELL_SIZE * 0.6)),
             Transform::from_translation(trail_pos.to_world().extend(0.5)),
             TrailParticle {
                 timer: Timer::from_seconds(0.4, TimerMode::Once),

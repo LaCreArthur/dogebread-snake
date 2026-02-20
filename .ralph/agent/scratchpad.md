@@ -90,10 +90,19 @@ Screen shake, death particles, trail particles, and score popups already exist. 
 3. **Game over camera zoom** — dramatic slow zoom-out instead of snap to center
 4. **Eat screen flash** — brief golden tint/pulse on eat (subtle juice)
 
-### This Iteration: Eat particles + game-over camera + eat flash
-- Add `EatParticle` component to effects.rs (golden sparkles, short-lived, radial burst)
-- Add `spawn_eat_particles()` function — 6 tiny golden particles, faster than death particles
-- Call it from `game_tick` when player eats food
-- Add game-over zoom: slowly increase ortho scale over 2s in GameOver state
-- Add brief screen shake on eat (subtle, intensity 2.0)
-- Verify with cargo build
+### This Iteration: Eat particles + game-over camera + eat shake
+- Added `EatParticle` component + spawn/animate in effects.rs
+- 6 golden sparkle particles burst outward on eat (0.5s lifetime, shrink+fade)
+- Subtle screen shake (intensity 2.0) on eat for tactile feedback
+- Dramatic 2x zoom-out on game over (smooth lerp via existing ortho scale)
+- All 72 tests pass, build succeeds
+- Committed: 9b38c9d
+
+### Goal 3 Status: IN PROGRESS
+Remaining for visual polish:
+- Arena crush particles (debris along shrinking boundary)
+- More death particle variety (different colors/patterns)
+- Consider food glow/pulse enhancement
+
+### Next Iteration
+- Continue Goal 3: arena crush particles or move to Goal 4 (menu flow) if polish is sufficient

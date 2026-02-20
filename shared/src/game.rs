@@ -32,12 +32,7 @@ impl Direction {
         }
     }
 
-    pub const ALL: [Direction; 4] = [
-        Direction::Up,
-        Direction::Down,
-        Direction::Left,
-        Direction::Right,
-    ];
+    pub const ALL: [Direction; 4] = [Direction::Up, Direction::Down, Direction::Left, Direction::Right];
 }
 
 /// Grid position (cell coordinates, not pixels)
@@ -95,14 +90,14 @@ impl SnakeColor {
     /// Doge-themed snake colors
     pub fn palette(index: u32) -> Self {
         match index % 8 {
-            0 => Self::new(0.91, 0.69, 0.29),  // Doge Gold (player)
-            1 => Self::new(0.4, 0.85, 0.5),    // Lime Green
-            2 => Self::new(0.95, 0.35, 0.35),  // Hot Red
-            3 => Self::new(0.35, 0.55, 0.98),  // Electric Blue
-            4 => Self::new(0.95, 0.45, 0.85),  // Hot Pink
-            5 => Self::new(0.2, 0.95, 0.95),   // Bright Cyan
-            6 => Self::new(0.98, 0.60, 0.15),  // Bright Orange
-            7 => Self::new(0.75, 0.65, 0.98),  // Soft Purple
+            0 => Self::new(0.91, 0.69, 0.29), // Doge Gold (player)
+            1 => Self::new(0.4, 0.85, 0.5),   // Lime Green
+            2 => Self::new(0.95, 0.35, 0.35), // Hot Red
+            3 => Self::new(0.35, 0.55, 0.98), // Electric Blue
+            4 => Self::new(0.95, 0.45, 0.85), // Hot Pink
+            5 => Self::new(0.2, 0.95, 0.95),  // Bright Cyan
+            6 => Self::new(0.98, 0.60, 0.15), // Bright Orange
+            7 => Self::new(0.75, 0.65, 0.98), // Soft Purple
             _ => unreachable!(),
         }
     }
@@ -133,10 +128,7 @@ impl Snake {
         let delta = direction.opposite().delta();
         let mut segments = VecDeque::new();
         for i in 0..INITIAL_SNAKE_LENGTH {
-            segments.push_back(GridPos::new(
-                head_x + delta.x * i as i32,
-                head_y + delta.y * i as i32,
-            ));
+            segments.push_back(GridPos::new(head_x + delta.x * i as i32, head_y + delta.y * i as i32));
         }
         Self {
             segments,

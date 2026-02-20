@@ -15,6 +15,9 @@ path = "src/main.rs"
 bevy = { workspace = true, features = ["wav"] }
 shared = { path = "../shared" }
 
+[dev-dependencies]
+image = "0.25"
+
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 bevy = { workspace = true, features = ["webgl2", "wav"] }
 wasm-bindgen = "0.2"

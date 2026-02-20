@@ -1,0 +1,23 @@
+2026-02-15T14:19:16.929389Z  WARN ralph: Unknown core field 'model'. Known fields: scratchpad, specs_dir
+2026-02-15T14:19:17.042641Z  INFO ralph_core::event_loop: Memory injection check: enabled=true, inject=Auto, workspace_root="/Users/bretzelstudio/workspace/dogebread-snake"
+2026-02-15T14:19:17.042790Z  INFO ralph_core::event_loop: Looking for memories at: "/Users/bretzelstudio/workspace/dogebread-snake/.ralph/agent/memories.md" (exists: false)
+2026-02-15T14:19:17.042832Z  INFO ralph_core::event_loop: Successfully loaded 0 memories from store
+2026-02-15T14:19:17.042853Z  INFO ralph_core::event_loop: Memory store is empty - no memories to inject
+2026-02-15T14:24:09.129934Z  INFO ralph_core::event_loop: Memory injection check: enabled=true, inject=Auto, workspace_root="/Users/bretzelstudio/workspace/dogebread-snake"
+2026-02-15T14:24:09.130007Z  INFO ralph_core::event_loop: Looking for memories at: "/Users/bretzelstudio/workspace/dogebread-snake/.ralph/agent/memories.md" (exists: false)
+2026-02-15T14:24:09.130035Z  INFO ralph_core::event_loop: Successfully loaded 0 memories from store
+2026-02-15T14:24:09.130068Z  INFO ralph_core::event_loop: Memory store is empty - no memories to inject
+2026-02-15T14:24:09.130142Z  INFO ralph_core::event_loop: Injecting scratchpad (1985 chars) into prompt
+2026-02-15T14:24:09.130251Z  INFO ralph_core::event_loop: Injecting ready tasks (0 ready, 0 open, 1 closed) into prompt
+2026-02-15T14:29:51.701085Z  INFO ralph_core::event_loop: Memory injection check: enabled=true, inject=Auto, workspace_root="/Users/bretzelstudio/workspace/dogebread-snake"
+2026-02-15T14:29:51.701140Z  INFO ralph_core::event_loop: Looking for memories at: "/Users/bretzelstudio/workspace/dogebread-snake/.ralph/agent/memories.md" (exists: false)
+2026-02-15T14:29:51.701160Z  INFO ralph_core::event_loop: Successfully loaded 0 memories from store
+2026-02-15T14:29:51.701168Z  INFO ralph_core::event_loop: Memory store is empty - no memories to inject
+2026-02-15T14:29:51.701223Z  INFO ralph_core::event_loop: Injecting scratchpad (3788 chars) into prompt
+2026-02-15T14:29:51.701327Z  INFO ralph_core::event_loop: Injecting ready tasks (0 ready, 0 open, 2 closed) into prompt
+2026-02-15T14:34:07.217117Z  INFO ralph_core::event_loop: Memory injection check: enabled=true, inject=Auto, workspace_root="/Users/bretzelstudio/workspace/dogebread-snake"
+2026-02-15T14:34:07.217174Z  INFO ralph_core::event_loop: Looking for memories at: "/Users/bretzelstudio/workspace/dogebread-snake/.ralph/agent/memories.md" (exists: false)
+2026-02-15T14:34:07.217189Z  INFO ralph_core::event_loop: Successfully loaded 0 memories from store
+2026-02-15T14:34:07.217194Z  INFO ralph_core::event_loop: Memory store is empty - no memories to inject
+2026-02-15T14:34:07.217251Z  INFO ralph_core::event_loop: Injecting scratchpad (5019 chars) into prompt
+2026-02-15T14:34:07.217363Z  INFO ralph_core::event_loop: Injecting ready tasks (0 ready, 0 open, 3 closed) into prompt
