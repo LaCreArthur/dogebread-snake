@@ -80,6 +80,7 @@ pub fn show_game_over(
     mut commands: Commands,
     existing: Query<Entity, With<GameOverOverlay>>,
     snake_query: Query<(&Snake, &SnakeColor, &SnakeId)>,
+    player_name: Res<crate::menu::PlayerName>,
 ) {
     if !existing.is_empty() {
         return;
@@ -90,7 +91,7 @@ pub fn show_game_over(
     let player_lost = !player_won;
     let winner_text = if let Some((_, _, id)) = winner {
         if id.0 == 0 {
-            "VICTORY! very win! so champion! wow!".to_string()
+            format!("{} wins! very champion! such skill! wow!", player_name.display())
         } else {
             format!("{} wins! much skill! so impress!", snake_color_name(id.0))
         }
@@ -102,7 +103,7 @@ pub fn show_game_over(
         .iter()
         .map(|(s, color, id)| RankingEntry {
             name: if id.0 == 0 {
-                "You".to_string()
+                player_name.display().to_string()
             } else {
                 snake_color_name(id.0).to_string()
             },

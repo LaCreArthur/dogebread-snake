@@ -50,6 +50,7 @@ pub fn game_tick(
     bounds: Res<ArenaBounds>,
     mut shake: ResMut<rendering::ScreenShake>,
     sfx: Option<Res<audio::SoundEffects>>,
+    player_name: Res<crate::menu::PlayerName>,
 ) {
     tick.timer.tick(time.delta());
     if !tick.timer.just_finished() {
@@ -156,13 +157,13 @@ pub fn game_tick(
             rendering::spawn_death_particles(&mut commands, death_pos, color.head, time.elapsed_secs());
 
             let dead_name = if dead_id.0 == 0 {
-                "You".to_string()
+                player_name.display().to_string()
             } else {
                 rendering::get_snake_color_name(dead_id.0).to_string()
             };
             let (message, feed_color) = if let Some(killer_id) = killer {
                 let killer_name = if killer_id.0 == 0 {
-                    "You".to_string()
+                    player_name.display().to_string()
                 } else {
                     rendering::get_snake_color_name(killer_id.0).to_string()
                 };
@@ -243,6 +244,7 @@ pub fn arena_shrink(
     mut shake: ResMut<rendering::ScreenShake>,
     mut warning: ResMut<rendering::ShrinkWarning>,
     sfx: Option<Res<audio::SoundEffects>>,
+    player_name: Res<crate::menu::PlayerName>,
 ) {
     shrink_timer.timer.tick(time.delta());
 
@@ -287,7 +289,7 @@ pub fn arena_shrink(
             shake.intensity = 8.0;
 
             let dead_name = if snake_id.0 == 0 {
-                "You".to_string()
+                player_name.display().to_string()
             } else {
                 rendering::get_snake_color_name(snake_id.0).to_string()
             };

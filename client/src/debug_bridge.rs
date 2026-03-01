@@ -61,6 +61,7 @@ pub fn sync_debug_state(
 fn state_str(state: GameState) -> &'static str {
     match state {
         GameState::Home => "Home",
+        GameState::NameEntry => "NameEntry",
         GameState::WaitingToStart => "WaitingToStart",
         GameState::Countdown => "Countdown",
         GameState::Playing => "Playing",

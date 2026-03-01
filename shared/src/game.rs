@@ -202,6 +202,8 @@ impl Food {
 pub enum GameState {
     #[default]
     Home,
+    /// Player name entry -- shown after pressing Play from Home
+    NameEntry,
     WaitingToStart,
     Countdown,
     Playing,

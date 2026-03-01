@@ -3,6 +3,48 @@ use shared::game::*;
 
 use crate::rendering;
 
+// ── Player name resource ───────────────────────────────────────────────
+
+/// The name the player chose before the match.
+#[derive(Resource, Default, Clone)]
+pub struct PlayerName {
+    pub name: String,
+}
+
+impl PlayerName {
+    /// Returns the display name — falls back to "Player" if empty.
+    pub fn display(&self) -> &str {
+        if self.name.trim().is_empty() {
+            "Player"
+        } else {
+            self.name.trim()
+        }
+    }
+}
+
+// ── LocalStorage helpers (WASM) ────────────────────────────────────────
+
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn load_name_from_storage() -> Option<String> {
+    let result = js_sys::eval("window.localStorage.getItem('dogebread_player_name')").ok()?;
+    result.as_string()
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn load_name_from_storage() -> Option<String> {
+    None
+}
+
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn save_name_to_storage(name: &str) {
+    let escaped = name.replace('\\', "\\\\").replace('\'', "\\'");
+    let js = format!("window.localStorage.setItem('dogebread_player_name', '{}')", escaped);
+    let _ = js_sys::eval(&js);
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn save_name_to_storage(_name: &str) {}
+
 // ── Button markers ─────────────────────────────────────────────────────
 
 #[derive(Component)]
@@ -16,6 +58,19 @@ pub(crate) struct HomeButton;
 
 #[derive(Component)]
 pub(crate) struct PlayAgainButton;
+
+// ── Name entry screen markers ──────────────────────────────────────────
+
+#[derive(Component)]
+pub(crate) struct NameEntryScreen;
+
+/// Marker for the text node that shows the current name being typed
+#[derive(Component)]
+pub(crate) struct NameInputText;
+
+/// Marker for the GO! button on the name entry screen
+#[derive(Component)]
+pub(crate) struct StartGameButton;
 
 // ── Home screen marker ─────────────────────────────────────────────────
 
@@ -342,7 +397,8 @@ pub fn home_play_button(
 ) {
     for interaction in &interaction_query {
         if *interaction == Interaction::Pressed {
-            next_state.set(GameState::WaitingToStart);
+            // Go to NameEntry first so player can set their name
+            next_state.set(GameState::NameEntry);
         }
     }
 }
@@ -400,11 +456,12 @@ pub fn gameover_home_button(
 pub fn save_match_to_leaderboard(
     mut leaderboard: ResMut<LeaderboardData>,
     snake_query: Query<(&Snake, &SnakeColor, &SnakeId)>,
+    player_name: Res<PlayerName>,
 ) {
     let winner = snake_query.iter().find(|(s, _, _)| s.alive);
     let winner_name = if let Some((_, _, id)) = winner {
         if id.0 == 0 {
-            "You".to_string()
+            player_name.display().to_string()
         } else {
             rendering::get_snake_color_name(id.0).to_string()
         }
@@ -452,6 +509,194 @@ pub fn save_match_to_leaderboard(
         player_score,
         player_kills,
     });
+}
+
+// ── Name entry screen ─────────────────────────────────────────────────
+
+/// Show the name entry screen. Loads stored name from localStorage if available.
+pub fn show_name_entry(mut commands: Commands, mut player_name: ResMut<PlayerName>) {
+    // Pre-fill from localStorage
+    if let Some(stored) = load_name_from_storage()
+        && !stored.trim().is_empty()
+    {
+        player_name.name = stored;
+    }
+
+    let cursor_text = if player_name.name.is_empty() {
+        "_".to_string()
+    } else {
+        format!("{}_", player_name.name)
+    };
+
+    commands
+        .spawn((
+            Node {
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(22.0),
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.88)),
+            NameEntryScreen,
+        ))
+        .with_children(|parent| {
+            // Title
+            parent.spawn((
+                Text::new("ENTER YOUR NAME"),
+                TextFont { font_size: 44.0, ..default() },
+                TextColor(rendering::DOGE_GOLD),
+            ));
+
+            // Doge subtitle
+            parent.spawn((
+                Text::new("such identity   very player   wow"),
+                TextFont { font_size: 16.0, ..default() },
+                TextColor(Color::srgb(0.6, 0.55, 0.40)),
+            ));
+
+            // Input box
+            parent
+                .spawn((
+                    Node {
+                        width: Val::Px(340.0),
+                        height: Val::Px(56.0),
+                        justify_content: JustifyContent::Center,
+                        align_items: AlignItems::Center,
+                        border: UiRect::all(Val::Px(2.0)),
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgba(0.08, 0.08, 0.16, 0.95)),
+                    BorderColor::all(rendering::DOGE_GOLD),
+                ))
+                .with_children(|input_parent| {
+                    input_parent.spawn((
+                        Text::new(cursor_text),
+                        TextFont { font_size: 28.0, ..default() },
+                        TextColor(Color::srgb(0.95, 0.90, 0.80)),
+                        NameInputText,
+                    ));
+                });
+
+            // Hint
+            parent.spawn((
+                Text::new("type name, press Enter or GO!   (max 16 chars)"),
+                TextFont { font_size: 13.0, ..default() },
+                TextColor(Color::srgb(0.45, 0.40, 0.30)),
+            ));
+
+            // GO! button
+            parent
+                .spawn((
+                    Button,
+                    Node {
+                        width: Val::Px(180.0),
+                        height: Val::Px(56.0),
+                        justify_content: JustifyContent::Center,
+                        align_items: AlignItems::Center,
+                        border: UiRect::all(Val::Px(2.0)),
+                        ..default()
+                    },
+                    BackgroundColor(BTN_NORMAL),
+                    BorderColor::all(rendering::DOGE_GOLD),
+                    StartGameButton,
+                ))
+                .with_children(|btn_parent| {
+                    btn_parent.spawn((
+                        Text::new("GO!"),
+                        TextFont { font_size: 32.0, ..default() },
+                        TextColor(Color::srgb(0.95, 0.90, 0.80)),
+                    ));
+                });
+        });
+}
+
+pub fn hide_name_entry(mut commands: Commands, query: Query<Entity, With<NameEntryScreen>>) {
+    for entity in &query {
+        if let Ok(mut ec) = commands.get_entity(entity) {
+            ec.despawn();
+        }
+    }
+}
+
+/// Helper: finalise the player name and transition to WaitingToStart
+fn confirm_name(player_name: &mut PlayerName, next_state: &mut NextState<GameState>) {
+    let trimmed = player_name.name.trim().to_string();
+    player_name.name = if trimmed.is_empty() {
+        "Player".to_string()
+    } else {
+        trimmed
+    };
+    save_name_to_storage(&player_name.name);
+    next_state.set(GameState::WaitingToStart);
+}
+
+/// Handle keyboard input on the name entry screen
+pub fn name_entry_input(
+    mut keyboard_reader: MessageReader<bevy::input::keyboard::KeyboardInput>,
+    mut player_name: ResMut<PlayerName>,
+    mut text_query: Query<&mut Text, With<NameInputText>>,
+    mut next_state: ResMut<NextState<GameState>>,
+) {
+    use bevy::input::keyboard::Key;
+
+    let mut changed = false;
+
+    for keyboard_input in keyboard_reader.read() {
+        if !keyboard_input.state.is_pressed() {
+            continue;
+        }
+        match (&keyboard_input.logical_key, &keyboard_input.text) {
+            (Key::Enter, _) => {
+                confirm_name(&mut player_name, &mut next_state);
+                return;
+            }
+            (Key::Backspace, _) => {
+                if player_name.name.pop().is_some() {
+                    changed = true;
+                }
+            }
+            (_, Some(text)) => {
+                if player_name.name.len() < 16 {
+                    for ch in text.chars() {
+                        if !ch.is_ascii_control()
+                            && (ch.is_alphanumeric() || matches!(ch, '_' | '-' | ' ' | '.'))
+                        {
+                            player_name.name.push(ch);
+                            changed = true;
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    if changed {
+        let display = if player_name.name.is_empty() {
+            "_".to_string()
+        } else {
+            format!("{}_", player_name.name)
+        };
+        for mut text in &mut text_query {
+            **text = display.clone();
+        }
+    }
+}
+
+/// GO! button on name entry screen
+pub fn name_entry_start_button(
+    interaction_query: Query<&Interaction, (Changed<Interaction>, With<StartGameButton>)>,
+    mut player_name: ResMut<PlayerName>,
+    mut next_state: ResMut<NextState<GameState>>,
+) {
+    for interaction in &interaction_query {
+        if *interaction == Interaction::Pressed {
+            confirm_name(&mut player_name, &mut next_state);
+        }
+    }
 }
 
 // ── Cleanup match entities ─────────────────────────────────────────────

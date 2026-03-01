@@ -109,6 +109,7 @@ pub fn run() {
             timer: Timer::from_seconds(0.15, TimerMode::Repeating),
         })
         .insert_resource(menu::LeaderboardData::default())
+        .insert_resource(menu::PlayerName::default())
         .init_state::<GameState>()
         .add_systems(
             Startup,
@@ -125,6 +126,18 @@ pub fn run() {
             Update,
             (menu::home_play_button, menu::home_leaderboard_button, testing::auto_skip_home)
                 .run_if(in_state(GameState::Home)),
+        )
+        // Name entry screen
+        .add_systems(OnEnter(GameState::NameEntry), menu::show_name_entry)
+        .add_systems(OnExit(GameState::NameEntry), menu::hide_name_entry)
+        .add_systems(
+            Update,
+            (
+                menu::name_entry_input,
+                menu::name_entry_start_button,
+                testing::auto_skip_name_entry,
+            )
+                .run_if(in_state(GameState::NameEntry)),
         )
         // Leaderboard screen
         .add_systems(OnEnter(GameState::Leaderboard), menu::show_leaderboard)
