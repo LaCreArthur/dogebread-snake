@@ -2,6 +2,7 @@ mod camera;
 mod grid;
 mod hud;
 mod overlays;
+mod sprites;
 mod world;
 
 use bevy::prelude::*;
@@ -145,7 +146,6 @@ pub(crate) const COLOR_GRID_B: Color = Color::srgb(0.14, 0.14, 0.22);
 pub(crate) const COLOR_WALL: Color = Color::srgb(0.58, 0.45, 0.20);
 pub(crate) const COLOR_DANGER: Color = Color::srgb(0.85, 0.35, 0.15);
 pub(crate) const COLOR_DANGER_BRIGHT: Color = Color::srgb(1.0, 0.55, 0.25);
-pub(crate) const COLOR_FOOD: Color = Color::srgb(0.95, 0.73, 0.20);
 
 // --- Public re-exports ---
 
@@ -156,6 +156,7 @@ pub use overlays::{
     animate_game_over, animate_kill_feed, despawn_countdown_overlay, get_snake_color_name, hide_game_over,
     hide_start_prompt, show_game_over, show_start_prompt, spawn_countdown_overlay, spawn_kill_feed_entry,
 };
+pub use sprites::load_sprite_assets;
 pub use world::{render_food, render_snakes};
 
 /// Set window properties

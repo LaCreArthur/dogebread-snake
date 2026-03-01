@@ -2,11 +2,13 @@ use bevy::prelude::*;
 use shared::constants::*;
 use shared::game::*;
 
+use super::sprites::SpriteAssets;
 use super::*;
 
 /// Sync all snake entities to their sprite representations
 pub fn render_snakes(
     mut commands: Commands,
+    sprite_assets: Res<SpriteAssets>,
     snake_query: Query<(Entity, &Snake, &SnakeColor, Option<&DeathTimer>)>,
     mut segment_query: Query<(Entity, &mut Transform, &mut Sprite, &SnakeSegmentSprite)>,
 ) {
@@ -25,11 +27,25 @@ pub fn render_snakes(
         if needed > existing_count {
             for i in existing_count..needed {
                 let pos = snake.segments[i];
-                commands.spawn((
-                    Sprite::from_color(color.body, Vec2::splat(CELL_SIZE - 2.0)),
-                    Transform::from_translation(pos.to_world().extend(1.0)),
-                    SnakeSegmentSprite { snake_entity, index: i },
-                ));
+                if i == 0 {
+                    // Head: use Doge sprite
+                    commands.spawn((
+                        Sprite {
+                            image: sprite_assets.doge_head.clone(),
+                            custom_size: Some(Vec2::splat(CELL_SIZE)),
+                            ..default()
+                        },
+                        Transform::from_translation(pos.to_world().extend(2.0)),
+                        SnakeSegmentSprite { snake_entity, index: i },
+                    ));
+                } else {
+                    // Body: colored square (keeps per-snake color identity)
+                    commands.spawn((
+                        Sprite::from_color(color.body, Vec2::splat(CELL_SIZE - 2.0)),
+                        Transform::from_translation(pos.to_world().extend(1.0)),
+                        SnakeSegmentSprite { snake_entity, index: i },
+                    ));
+                }
             }
         }
 
@@ -58,6 +74,7 @@ pub fn render_snakes(
             transform.translation = pos.to_world().extend(if seg.index == 0 { 2.0 } else { 1.0 });
 
             if !snake.alive {
+                // Death blink: use alpha fade on all segments
                 let blink = if let Some(dt) = death_timer {
                     let t = dt.timer.fraction();
                     (1.0 - t) * ((t * 12.0).sin() * 0.5 + 0.5)
@@ -65,26 +82,30 @@ pub fn render_snakes(
                     0.5
                 };
                 sprite.color = Color::srgba(0.4, 0.4, 0.4, blink);
+                sprite.custom_size = Some(Vec2::splat(if seg.index == 0 {
+                    CELL_SIZE
+                } else {
+                    CELL_SIZE - 3.0
+                }));
             } else if seg.index == 0 {
-                sprite.color = color.head;
-            } else {
-                let c = color.body.to_srgba();
-                sprite.color = Color::srgb(c.red * 0.8, c.green * 0.8, c.blue * 0.8);
-            }
-
-            if seg.index == 0 {
+                // Head: restore full-color (no tint) so Doge sprite looks natural
+                sprite.color = Color::WHITE;
                 sprite.custom_size = Some(Vec2::splat(CELL_SIZE));
             } else {
+                // Body segments: tint with snake color
+                let c = color.body.to_srgba();
+                sprite.color = Color::srgb(c.red * 0.8, c.green * 0.8, c.blue * 0.8);
                 sprite.custom_size = Some(Vec2::splat(CELL_SIZE - 3.0));
             }
         }
     }
 }
 
-/// Render food with pulsing animation
+/// Render food with pulsing animation using coin sprite
 pub fn render_food(
     mut commands: Commands,
     time: Res<Time>,
+    sprite_assets: Res<SpriteAssets>,
     food_query: Query<&Food>,
     mut food_sprite_query: Query<(Entity, &mut Transform, &mut Sprite), With<FoodSprite>>,
 ) {
@@ -100,7 +121,7 @@ pub fn render_food(
     }
 
     let elapsed = time.elapsed_secs();
-    let base_size = CELL_SIZE - 5.0;
+    let base_size = CELL_SIZE - 4.0;
 
     let mut existing: Vec<_> = food_sprite_query.iter_mut().collect();
     for (i, food) in foods.iter().enumerate() {
@@ -112,9 +133,15 @@ pub fn render_food(
         if i < existing.len() {
             existing[i].1.translation = food.pos.to_world().extend(0.5);
             existing[i].2.custom_size = Some(Vec2::splat(pulsed_size));
+            // Keep coin sprite color natural (gold coin needs no extra tint)
+            existing[i].2.color = Color::WHITE;
         } else {
             commands.spawn((
-                Sprite::from_color(COLOR_FOOD, Vec2::splat(pulsed_size)),
+                Sprite {
+                    image: sprite_assets.coin.clone(),
+                    custom_size: Some(Vec2::splat(pulsed_size)),
+                    ..default()
+                },
                 Transform::from_translation(food.pos.to_world().extend(0.5)),
                 FoodSprite,
             ));

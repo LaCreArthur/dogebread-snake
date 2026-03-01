@@ -114,6 +114,7 @@ pub fn run() {
         .add_systems(
             Startup,
             (
+                rendering::load_sprite_assets,
                 rendering::spawn_grid,
                 rendering::spawn_ui,
                 audio::setup_audio,
