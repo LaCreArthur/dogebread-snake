@@ -36,7 +36,7 @@ A polished, juicy snake battle royale playable in-browser that feels like a real
 - [x] WASM build verified + build script (Sprint 8) + GitHub Pages live (Sprint 11)
 
 ### P2: Nice to Have
-- [ ] Full menu flow: Home → Play → Game → Leaderboard → Home
+- [x] Full menu flow: Home → Play → Game → Leaderboard → Home (Sprint 16)
 - [ ] Doge sprites/assets (actual Doge head, coin pickups)
 - [x] Screen shake intensity scales with kills (Sprint 9)
 - [x] Spectate: auto-follow strongest remaining snake (Sprint 9)

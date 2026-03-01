@@ -1,7 +1,7 @@
 # Scratchpad
 
 ## Current State
-ALL P0 COMPLETE. 8/8 P1 COMPLETE (minus 2 deferred). 2 P2 COMPLETE. DEPLOYED TO GITHUB PAGES. FULL TEST SUITE + CI. 72 tests passing, clippy clean, CI pipeline active. 15 sprints, 32 commits. Live at https://lacrearthur.github.io/dogebread-snake/
+ALL P0 COMPLETE. 8/8 P1 COMPLETE (minus 2 deferred). 3 P2 COMPLETE (menu flow added). DEPLOYED TO GITHUB PAGES. FULL TEST SUITE + CI. 85 tests passing, clippy clean, CI pipeline active. 16 sprints, 33 commits. Live at https://lacrearthur.github.io/dogebread-snake/
 
 ## Testing Coverage
 - **62 unit tests** (shared/src/game.rs) — Direction, GridPos, Snake, ArenaBounds, SnakeColor, Food, edge cases
