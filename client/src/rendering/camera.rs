@@ -20,7 +20,7 @@ pub fn camera_follow(
     };
 
     let target = match state.get() {
-        GameState::WaitingToStart | GameState::Countdown | GameState::GameOver => Vec2::ZERO,
+        GameState::Home | GameState::WaitingToStart | GameState::Countdown | GameState::GameOver | GameState::Leaderboard => Vec2::ZERO,
         GameState::Playing => {
             if let Ok(snake) = player_query.single() {
                 if snake.alive {

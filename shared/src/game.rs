@@ -201,10 +201,12 @@ impl Food {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, States, Default)]
 pub enum GameState {
     #[default]
+    Home,
     WaitingToStart,
     Countdown,
     Playing,
     GameOver,
+    Leaderboard,
 }
 
 /// Track alive snake count and rankings

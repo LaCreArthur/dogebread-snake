@@ -60,10 +60,12 @@ pub fn sync_debug_state(
 #[cfg(target_arch = "wasm32")]
 fn state_str(state: GameState) -> &'static str {
     match state {
+        GameState::Home => "Home",
         GameState::WaitingToStart => "WaitingToStart",
         GameState::Countdown => "Countdown",
         GameState::Playing => "Playing",
         GameState::GameOver => "GameOver",
+        GameState::Leaderboard => "Leaderboard",
     }
 }
 

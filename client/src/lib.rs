@@ -4,6 +4,7 @@ mod effects;
 mod game_systems;
 mod input;
 mod match_lifecycle;
+mod menu;
 mod rendering;
 mod testing;
 mod ui;
@@ -107,17 +108,36 @@ pub fn run() {
         .insert_resource(effects::TrailSpawner {
             timer: Timer::from_seconds(0.15, TimerMode::Repeating),
         })
+        .insert_resource(menu::LeaderboardData::default())
         .init_state::<GameState>()
         .add_systems(
             Startup,
             (
                 rendering::spawn_grid,
                 rendering::spawn_ui,
-                match_lifecycle::spawn_match,
                 audio::setup_audio,
             ),
         )
-        .add_systems(OnEnter(GameState::WaitingToStart), rendering::show_start_prompt)
+        // Home screen
+        .add_systems(OnEnter(GameState::Home), menu::show_home)
+        .add_systems(OnExit(GameState::Home), menu::hide_home)
+        .add_systems(
+            Update,
+            (menu::home_play_button, menu::home_leaderboard_button, testing::auto_skip_home)
+                .run_if(in_state(GameState::Home)),
+        )
+        // Leaderboard screen
+        .add_systems(OnEnter(GameState::Leaderboard), menu::show_leaderboard)
+        .add_systems(OnExit(GameState::Leaderboard), menu::hide_leaderboard)
+        .add_systems(
+            Update,
+            menu::leaderboard_home_button.run_if(in_state(GameState::Leaderboard)),
+        )
+        // WaitingToStart: spawn match + show prompt
+        .add_systems(
+            OnEnter(GameState::WaitingToStart),
+            (match_lifecycle::spawn_match, rendering::show_start_prompt),
+        )
         .add_systems(OnExit(GameState::WaitingToStart), rendering::hide_start_prompt)
         .add_systems(
             Update,
@@ -142,11 +162,31 @@ pub fn run() {
             )
                 .run_if(in_state(GameState::Playing)),
         )
-        .add_systems(OnEnter(GameState::GameOver), rendering::show_game_over)
-        .add_systems(OnExit(GameState::GameOver), rendering::hide_game_over)
+        .add_systems(
+            OnEnter(GameState::GameOver),
+            (menu::save_match_to_leaderboard, rendering::show_game_over),
+        )
+        .add_systems(
+            OnExit(GameState::GameOver),
+            rendering::hide_game_over,
+        )
+        .add_systems(
+            OnExit(GameState::GameOver),
+            menu::cleanup_match_entities,
+        )
+        .add_systems(
+            OnExit(GameState::GameOver),
+            menu::cleanup_match_resources,
+        )
         .add_systems(
             Update,
-            (match_lifecycle::restart_on_space, rendering::animate_game_over).run_if(in_state(GameState::GameOver)),
+            (
+                match_lifecycle::restart_on_space,
+                rendering::animate_game_over,
+                menu::gameover_play_again_button,
+                menu::gameover_home_button,
+            )
+                .run_if(in_state(GameState::GameOver)),
         )
         .add_systems(
             Update,
@@ -183,5 +223,6 @@ pub fn run() {
                 effects::animate_trail_particles,
             ),
         )
+        .add_systems(Update, menu::button_hover_system)
         .run();
 }

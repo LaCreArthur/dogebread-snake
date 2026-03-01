@@ -25,6 +25,16 @@ pub(crate) struct AutoTestState {
     pub exit_timer: Option<Timer>,
 }
 
+/// In AUTO_TEST mode, skip the home screen and go directly to WaitingToStart.
+pub fn auto_skip_home(
+    auto_test: Res<AutoTestState>,
+    mut next_state: ResMut<NextState<GameState>>,
+) {
+    if auto_test.enabled {
+        next_state.set(GameState::WaitingToStart);
+    }
+}
+
 /// In AUTO_TEST mode, give the player snake AI control so it actually plays.
 pub fn auto_test_ai(
     mut commands: Commands,

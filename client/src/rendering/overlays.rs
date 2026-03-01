@@ -334,18 +334,95 @@ pub fn animate_game_over(
             };
 
             if restart_query.is_empty() {
-                let restart = commands
+                // Button container
+                let btn_container = commands
                     .spawn((
-                        Text::new("Press SPACE for much restart"),
+                        Node {
+                            flex_direction: FlexDirection::Row,
+                            column_gap: Val::Px(20.0),
+                            justify_content: JustifyContent::Center,
+                            align_items: AlignItems::Center,
+                            ..default()
+                        },
+                        GameOverRestart,
+                    ))
+                    .id();
+                commands.entity(overlay_entity).add_child(btn_container);
+
+                // PLAY AGAIN button
+                let play_again = commands
+                    .spawn((
+                        Button,
+                        Node {
+                            width: Val::Px(200.0),
+                            height: Val::Px(50.0),
+                            justify_content: JustifyContent::Center,
+                            align_items: AlignItems::Center,
+                            border: UiRect::all(Val::Px(2.0)),
+                            ..default()
+                        },
+                        BackgroundColor(Color::srgb(0.20, 0.18, 0.30)),
+                        BorderColor::all(DOGE_GOLD),
+                        crate::menu::PlayAgainButton,
+                    ))
+                    .id();
+                commands.entity(btn_container).add_child(play_again);
+
+                let play_text = commands
+                    .spawn((
+                        Text::new("PLAY AGAIN"),
                         TextFont {
                             font_size: 22.0,
                             ..default()
                         },
-                        TextColor(Color::srgb(0.7, 0.7, 0.7)),
-                        GameOverRestart,
+                        TextColor(Color::srgb(0.95, 0.90, 0.80)),
                     ))
                     .id();
-                commands.entity(overlay_entity).add_child(restart);
+                commands.entity(play_again).add_child(play_text);
+
+                // HOME button
+                let home = commands
+                    .spawn((
+                        Button,
+                        Node {
+                            width: Val::Px(150.0),
+                            height: Val::Px(50.0),
+                            justify_content: JustifyContent::Center,
+                            align_items: AlignItems::Center,
+                            border: UiRect::all(Val::Px(2.0)),
+                            ..default()
+                        },
+                        BackgroundColor(Color::srgb(0.20, 0.18, 0.30)),
+                        BorderColor::all(Color::srgb(0.5, 0.45, 0.35)),
+                        crate::menu::HomeButton,
+                    ))
+                    .id();
+                commands.entity(btn_container).add_child(home);
+
+                let home_text = commands
+                    .spawn((
+                        Text::new("HOME"),
+                        TextFont {
+                            font_size: 22.0,
+                            ..default()
+                        },
+                        TextColor(Color::srgb(0.75, 0.70, 0.60)),
+                    ))
+                    .id();
+                commands.entity(home).add_child(home_text);
+
+                // Also keep keyboard hint
+                let hint = commands
+                    .spawn((
+                        Text::new("or press SPACE / R"),
+                        TextFont {
+                            font_size: 14.0,
+                            ..default()
+                        },
+                        TextColor(Color::srgb(0.45, 0.45, 0.45)),
+                    ))
+                    .id();
+                commands.entity(overlay_entity).add_child(hint);
             }
 
             anim.phase = 4;

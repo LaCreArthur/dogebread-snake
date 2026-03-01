@@ -3,11 +3,9 @@ use shared::constants::*;
 use shared::game::*;
 
 use crate::audio;
-use crate::effects;
-use crate::game_systems::MatchTimer;
 use crate::rendering;
 use crate::testing::AutoTestState;
-use crate::{GameTick, NUM_FOOD, NUM_SNAKES, SimpleRng};
+use crate::{NUM_FOOD, NUM_SNAKES, SimpleRng};
 
 /// Countdown resource: tracks the 3-2-1-GO! timer
 #[derive(Resource)]
@@ -56,98 +54,15 @@ pub fn spawn_match(mut commands: Commands, mut rng: ResMut<SimpleRng>, mut match
     match_state.alive_count = NUM_SNAKES;
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn restart_on_space(
     keyboard: Res<ButtonInput<KeyCode>>,
-    mut commands: Commands,
-    snake_query: Query<Entity, With<Snake>>,
-    food_query: Query<Entity, With<Food>>,
-    segment_query: Query<Entity, With<rendering::SnakeSegmentSprite>>,
-    food_sprite_query: Query<Entity, With<rendering::FoodSprite>>,
-    overlay_query: Query<Entity, With<rendering::GameOverOverlay>>,
-    mut rng: ResMut<SimpleRng>,
-    mut match_state: ResMut<MatchState>,
     mut next_state: ResMut<NextState<GameState>>,
-    mut bounds: ResMut<ArenaBounds>,
-    mut tick: ResMut<GameTick>,
-    mut match_timer: ResMut<MatchTimer>,
-    floating_text_query: Query<Entity, With<effects::FloatingText>>,
-    particle_query: Query<Entity, With<effects::DeathParticle>>,
-    mut shake: ResMut<rendering::ScreenShake>,
 ) {
     let should_restart = keyboard.just_pressed(KeyCode::Space) || keyboard.just_pressed(KeyCode::KeyR);
 
-    if !should_restart {
-        return;
+    if should_restart {
+        next_state.set(GameState::WaitingToStart);
     }
-
-    for entity in &snake_query {
-        if let Ok(mut ec) = commands.get_entity(entity) {
-            ec.despawn();
-        }
-    }
-    for entity in &food_query {
-        if let Ok(mut ec) = commands.get_entity(entity) {
-            ec.despawn();
-        }
-    }
-    for entity in &segment_query {
-        if let Ok(mut ec) = commands.get_entity(entity) {
-            ec.despawn();
-        }
-    }
-    for entity in &food_sprite_query {
-        if let Ok(mut ec) = commands.get_entity(entity) {
-            ec.despawn();
-        }
-    }
-    for entity in &overlay_query {
-        if let Ok(mut ec) = commands.get_entity(entity) {
-            ec.despawn();
-        }
-    }
-    for entity in &floating_text_query {
-        if let Ok(mut ec) = commands.get_entity(entity) {
-            ec.despawn();
-        }
-    }
-    for entity in &particle_query {
-        if let Ok(mut ec) = commands.get_entity(entity) {
-            ec.despawn();
-        }
-    }
-    shake.intensity = 0.0;
-
-    commands.remove_resource::<CountdownTimer>();
-    commands.remove_resource::<rendering::GameOverAnimation>();
-
-    let positions = spawn_positions();
-    for i in 0..NUM_SNAKES {
-        let (x, y, dir) = positions[i as usize];
-        let snake = Snake::new(x, y, dir);
-        let color = SnakeColor::palette(i);
-        let id = SnakeId(i);
-
-        if i == 0 {
-            commands.spawn((snake, color, id, PlayerControlled));
-        } else {
-            commands.spawn((snake, color, id, AiControlled));
-        }
-    }
-
-    for _ in 0..NUM_FOOD {
-        let x = rng.range(2, GRID_WIDTH - 2);
-        let y = rng.range(2, GRID_HEIGHT - 2);
-        commands.spawn(Food::new(x, y));
-    }
-
-    match_state.total_snakes = NUM_SNAKES;
-    match_state.alive_count = NUM_SNAKES;
-    *bounds = ArenaBounds::default();
-    tick.timer
-        .set_duration(std::time::Duration::from_secs_f32(TICK_INTERVAL as f32));
-    match_timer.elapsed = 0.0;
-    next_state.set(GameState::WaitingToStart);
 }
 
 pub fn wait_for_start(
