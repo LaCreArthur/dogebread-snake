@@ -45,6 +45,71 @@ pub(crate) fn save_name_to_storage(name: &str) {
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn save_name_to_storage(_name: &str) {}
 
+// ── Date helper ────────────────────────────────────────────────────────
+
+#[cfg(target_arch = "wasm32")]
+fn get_today_date() -> String {
+    let d = js_sys::Date::new_0();
+    format!("{:04}-{:02}-{:02}", d.get_full_year(), d.get_month() + 1, d.get_date())
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn get_today_date() -> String {
+    String::new()
+}
+
+// ── Match history localStorage helpers ────────────────────────────────
+
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn save_history_to_storage(entries: &[LeaderboardEntry]) {
+    let lines: Vec<String> = entries.iter().map(|e| {
+        let safe_name = e.winner_name.replace('|', "_");
+        format!("{}|{}|{}|{}|{}|{}|{}",
+            e.match_number, safe_name, e.player_rank, e.player_score,
+            e.player_kills, e.total_kills, e.date)
+    }).collect();
+    let data = lines.join("\n");
+    let escaped = data.replace('\\', "\\\\").replace('\'', "\\\'");
+    let js = format!("window.localStorage.setItem('dogebread_match_history', '{}')", escaped);
+    let _ = js_sys::eval(&js);
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn save_history_to_storage(_entries: &[LeaderboardEntry]) {}
+
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn load_history_from_storage() -> Vec<LeaderboardEntry> {
+    let result = js_sys::eval("window.localStorage.getItem('dogebread_match_history')").ok();
+    let data = result.and_then(|v| v.as_string()).unwrap_or_default();
+    if data.is_empty() { return vec![]; }
+
+    let mut entries = vec![];
+    for line in data.lines() {
+        let parts: Vec<&str> = line.splitn(7, '|').collect();
+        if parts.len() < 6 { continue; }
+        let match_number = parts[0].parse().unwrap_or(0);
+        let player_rank = parts[2].parse().unwrap_or(0);
+        let player_score = parts[3].parse().unwrap_or(0);
+        let player_kills = parts[4].parse().unwrap_or(0);
+        let total_kills = parts[5].parse().unwrap_or(0);
+        let date = if parts.len() >= 7 { parts[6].to_string() } else { String::new() };
+        entries.push(LeaderboardEntry {
+            winner_name: parts[1].to_string(),
+            winner_color: Color::srgb(0.91, 0.69, 0.29),
+            total_kills,
+            match_number,
+            player_rank,
+            player_score,
+            player_kills,
+            date,
+        });
+    }
+    entries
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn load_history_from_storage() -> Vec<LeaderboardEntry> { vec![] }
+
 // ── Button markers ─────────────────────────────────────────────────────
 
 #[derive(Component)]
@@ -93,6 +158,7 @@ pub struct LeaderboardEntry {
     pub player_rank: u32,
     pub player_score: u32,
     pub player_kills: u32,
+    pub date: String, // "YYYY-MM-DD", empty on native
 }
 
 #[derive(Resource, Default)]
@@ -109,6 +175,12 @@ impl LeaderboardData {
         if self.entries.len() > 20 {
             self.entries.remove(0);
         }
+    }
+
+    pub fn from_storage() -> Self {
+        let entries = load_history_from_storage();
+        let match_counter = entries.iter().map(|e| e.match_number).max().unwrap_or(0);
+        Self { entries, match_counter }
     }
 }
 
@@ -300,14 +372,16 @@ pub fn show_leaderboard(mut commands: Commands, leaderboard: Res<LeaderboardData
 
                         // Show entries in reverse order (most recent first)
                         for entry in leaderboard.entries.iter().rev().take(10) {
+                            let date_str = if entry.date.is_empty() { String::new() } else { format!("  {}", entry.date) };
                             let row_text = format!(
-                                " {:>2}   {:<16} #{} ({} pts, {} kills)   {} bonks",
+                                " {:>2}   {:<16} #{} ({} pts, {} kills)   {} bonks{}",
                                 entry.match_number,
                                 entry.winner_name,
                                 entry.player_rank,
                                 entry.player_score,
                                 entry.player_kills,
                                 entry.total_kills,
+                                date_str,
                             );
 
                             entries_parent.spawn((
@@ -508,7 +582,9 @@ pub fn save_match_to_leaderboard(
         player_rank,
         player_score,
         player_kills,
+        date: get_today_date(),
     });
+    save_history_to_storage(&leaderboard.entries);
 }
 
 // ── Name entry screen ─────────────────────────────────────────────────

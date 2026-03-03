@@ -108,7 +108,7 @@ pub fn run() {
         .insert_resource(effects::TrailSpawner {
             timer: Timer::from_seconds(0.15, TimerMode::Repeating),
         })
-        .insert_resource(menu::LeaderboardData::default())
+        .insert_resource(menu::LeaderboardData::from_storage())
         .insert_resource(menu::PlayerName::default())
         .init_state::<GameState>()
         .add_systems(
