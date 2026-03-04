@@ -56,9 +56,12 @@ pub fn spawn_match(mut commands: Commands, mut rng: ResMut<SimpleRng>, mut match
 
 pub fn restart_on_space(
     keyboard: Res<ButtonInput<KeyCode>>,
+    touches: Res<Touches>,
     mut next_state: ResMut<NextState<GameState>>,
 ) {
-    let should_restart = keyboard.just_pressed(KeyCode::Space) || keyboard.just_pressed(KeyCode::KeyR);
+    let should_restart = keyboard.just_pressed(KeyCode::Space)
+        || keyboard.just_pressed(KeyCode::KeyR)
+        || touches.iter_just_pressed().next().is_some();
 
     if should_restart {
         next_state.set(GameState::WaitingToStart);
@@ -67,6 +70,7 @@ pub fn restart_on_space(
 
 pub fn wait_for_start(
     keyboard: Res<ButtonInput<KeyCode>>,
+    touches: Res<Touches>,
     mut commands: Commands,
     mut next_state: ResMut<NextState<GameState>>,
     mut snake_query: Query<&mut Snake, With<PlayerControlled>>,
@@ -81,6 +85,9 @@ pub fn wait_for_start(
     } else if keyboard.just_pressed(KeyCode::ArrowLeft) || keyboard.just_pressed(KeyCode::KeyA) {
         Some(Direction::Left)
     } else if keyboard.just_pressed(KeyCode::ArrowRight) || keyboard.just_pressed(KeyCode::KeyD) {
+        Some(Direction::Right)
+    } else if touches.iter_just_pressed().next().is_some() {
+        // Any tap starts the game — swipe direction is handled by handle_touch_input during play
         Some(Direction::Right)
     } else {
         None

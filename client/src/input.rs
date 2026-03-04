@@ -28,6 +28,30 @@ pub fn handle_input(keyboard: Res<ButtonInput<KeyCode>>, mut snake_query: Query<
     }
 }
 
+/// Detect swipe gestures from released touches and queue direction changes
+pub fn handle_touch_input(
+    touches: Res<Touches>,
+    mut snake_query: Query<&mut Snake, With<PlayerControlled>>,
+) {
+    for touch in touches.iter_just_released() {
+        let delta = touch.distance(); // position - start_position
+        if delta.length() < 30.0 {
+            continue;
+        }
+        // Screen Y is inverted relative to game grid
+        let dir = if delta.x.abs() > delta.y.abs() {
+            if delta.x > 0.0 { Direction::Right } else { Direction::Left }
+        } else {
+            if delta.y > 0.0 { Direction::Down } else { Direction::Up }
+        };
+        if let Ok(mut snake) = snake_query.single_mut() {
+            if snake.alive {
+                snake.set_direction(dir);
+            }
+        }
+    }
+}
+
 /// AI personality affects decision-making
 enum AiPersonality {
     Hungry,     // Prioritizes food

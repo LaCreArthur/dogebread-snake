@@ -167,14 +167,18 @@ pub fn run() {
             Update,
             (
                 input::handle_input,
+                input::handle_touch_input,
                 input::ai_tick,
-                game_systems::game_tick.after(input::handle_input).after(input::ai_tick),
+                game_systems::game_tick.after(input::handle_input).after(input::handle_touch_input).after(input::ai_tick),
                 game_systems::arena_shrink.after(game_systems::game_tick),
                 game_systems::speed_increase,
                 game_systems::track_match_time,
-                effects::spawn_trail_particles,
             )
                 .run_if(in_state(GameState::Playing)),
+        )
+        .add_systems(
+            Update,
+            effects::spawn_trail_particles.run_if(in_state(GameState::Playing)),
         )
         .add_systems(
             OnEnter(GameState::GameOver),
