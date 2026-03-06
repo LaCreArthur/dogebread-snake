@@ -166,6 +166,9 @@ pub fn window_setup() -> WindowPlugin {
             title: "DogeBread Snake".to_string(),
             resolution: (900, 780).into(),
             resizable: true,
+            canvas: Some("#bevy".to_string()),
+            fit_canvas_to_parent: true,
+            prevent_default_event_handling: true,
             ..default()
         }),
         ..default()

@@ -48,20 +48,20 @@ pub fn check_all(before: &TickSnapshot, snakes: &[Snake], bounds: &ArenaBounds, 
 fn no_teleportation(before: &TickSnapshot, snakes: &[Snake], tick: u32) {
     for (i, snake) in snakes.iter().enumerate() {
         // Only check snakes that were alive before AND are still alive
-        if let Some(prev_head) = before.head_positions[i] {
-            if snake.alive {
-                let dist = prev_head.distance(snake.head());
-                assert_eq!(
-                    dist,
-                    1,
-                    "tick {}: snake {} teleported! head moved {} cells ({:?} -> {:?})",
-                    tick,
-                    i,
-                    dist,
-                    prev_head,
-                    snake.head()
-                );
-            }
+        if let Some(prev_head) = before.head_positions[i]
+            && snake.alive
+        {
+            let dist = prev_head.distance(snake.head());
+            assert_eq!(
+                dist,
+                1,
+                "tick {}: snake {} teleported! head moved {} cells ({:?} -> {:?})",
+                tick,
+                i,
+                dist,
+                prev_head,
+                snake.head()
+            );
         }
     }
 }

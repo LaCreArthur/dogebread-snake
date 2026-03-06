@@ -41,13 +41,15 @@ pub fn handle_touch_input(
         // Screen Y is inverted relative to game grid
         let dir = if delta.x.abs() > delta.y.abs() {
             if delta.x > 0.0 { Direction::Right } else { Direction::Left }
+        } else if delta.y > 0.0 {
+            Direction::Down
         } else {
-            if delta.y > 0.0 { Direction::Down } else { Direction::Up }
+            Direction::Up
         };
-        if let Ok(mut snake) = snake_query.single_mut() {
-            if snake.alive {
-                snake.set_direction(dir);
-            }
+        if let Ok(mut snake) = snake_query.single_mut()
+            && snake.alive
+        {
+            snake.set_direction(dir);
         }
     }
 }

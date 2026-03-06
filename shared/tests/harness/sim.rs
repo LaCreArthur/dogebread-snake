@@ -269,8 +269,10 @@ impl GameSim {
 
             let preferred = if dx.abs() > dy.abs() {
                 if dx > 0 { Direction::Right } else { Direction::Left }
+            } else if dy > 0 {
+                Direction::Up
             } else {
-                if dy > 0 { Direction::Up } else { Direction::Down }
+                Direction::Down
             };
 
             if preferred != current.opposite() {
@@ -314,15 +316,15 @@ impl GameSim {
         self.tick += 1;
 
         // Arena shrink
-        if self.shrink_interval > 0 && self.tick % self.shrink_interval == 0 {
+        if self.shrink_interval > 0 && self.tick.is_multiple_of(self.shrink_interval) {
             self.bounds.shrink();
         }
 
         // Speed increase (simulate: factor *= 0.85, floor at 0.06/0.125 ≈ 0.48)
-        if let Some(interval) = self.speed_increase_interval {
-            if interval > 0 && self.tick % interval == 0 {
-                self.tick_interval_factor = (self.tick_interval_factor * 0.85).max(0.48);
-            }
+        if let Some(interval) = self.speed_increase_interval
+            && interval > 0 && self.tick.is_multiple_of(interval)
+        {
+            self.tick_interval_factor = (self.tick_interval_factor * 0.85).max(0.48);
         }
 
         // Choose directions
@@ -338,10 +340,10 @@ impl GameSim {
         }
 
         // Apply directions and move
-        for i in 0..n {
-            if let Some(dir) = directions[i] {
-                self.snakes[i].set_direction(dir);
-                self.snakes[i].step();
+        for (snake, dir_opt) in self.snakes.iter_mut().zip(directions.iter()) {
+            if let Some(dir) = dir_opt {
+                snake.set_direction(*dir);
+                snake.step();
             }
         }
 

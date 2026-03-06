@@ -56,7 +56,7 @@ pub fn show_start_prompt(mut commands: Commands) {
                 TextColor(Color::srgb(0.7, 0.6, 0.4)),
             ));
             parent.spawn((
-                Text::new("press arrow key to begin"),
+                Text::new("swipe or press arrow to begin"),
                 TextFont {
                     font_size: 22.0,
                     ..default()
@@ -360,6 +360,7 @@ pub fn animate_game_over(
                             justify_content: JustifyContent::Center,
                             align_items: AlignItems::Center,
                             border: UiRect::all(Val::Px(2.0)),
+                            padding: UiRect::all(Val::Px(12.0)),
                             ..default()
                         },
                         BackgroundColor(Color::srgb(0.20, 0.18, 0.30)),
@@ -391,6 +392,7 @@ pub fn animate_game_over(
                             justify_content: JustifyContent::Center,
                             align_items: AlignItems::Center,
                             border: UiRect::all(Val::Px(2.0)),
+                            padding: UiRect::all(Val::Px(12.0)),
                             ..default()
                         },
                         BackgroundColor(Color::srgb(0.20, 0.18, 0.30)),
@@ -415,7 +417,7 @@ pub fn animate_game_over(
                 // Also keep keyboard hint
                 let hint = commands
                     .spawn((
-                        Text::new("or press SPACE / R"),
+                        Text::new("tap or press SPACE to restart"),
                         TextFont {
                             font_size: 14.0,
                             ..default()
