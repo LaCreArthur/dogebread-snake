@@ -41,6 +41,8 @@ canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; t
   display: flex; flex-direction: column; gap: 12px; text-align: center;
 }
 #panel[hidden] { display: none; }
+#panel.late { animation: late 0.3s 2.5s both; } /* after a round, the winner's moment comes first */
+@keyframes late { from { opacity: 0; visibility: hidden; } }
 #panel h1 { margin: 0; font-size: 28px; color: var(--gold); }
 #panel h2 { margin: 0; font-size: 20px; }
 #panel p { margin: 0; color: var(--muted); }

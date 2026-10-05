@@ -103,7 +103,11 @@ function onMessage(msg: ServerMsg) {
     save(() => localStorage, "dbs-name", msg.name.join("."));
     renderPanel();
   } else if (msg.t === "over") {
-    play("gameOver");
+    // the victory moment: the camera moves in on the winner; the results panel waits (style.css)
+    const w = msg.winner >= 0 ? r.m!.snakes[msg.winner] : undefined;
+    play(w && w.id === r.seat ? "win" : "gameOver");
+    showBanner(!w ? "such draw! wow" : w.id === r.seat ? "you win! wow" : `${w.name} wins! wow`, 2500);
+    if (w) view.cheer(w);
     renderPanel();
   } else if (msg.t === "step" && r.m) {
     lastStepAt = now;
@@ -321,6 +325,7 @@ async function createRoom() {
 }
 
 function renderPanel() {
+  panel.classList.toggle("late", r.phase === "over");
   if (r.phase === "countdown" || r.phase === "playing") {
     panel.hidden = true;
     return;

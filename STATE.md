@@ -33,8 +33,7 @@ Branch: ts-rebuild (master keeps the Rust game until switch-over).
   tests, build pass (16.1 kB JS, 7.4 kB gzip). Replay .playwright-mcp/steer-replay.js
   (browser_run_code_unsafe with filename) at 390x844 with the touch stick: ate, died on the wall;
   then watched to the end (bot won at 1:31, results panel), no console errors.
-  Open (polish): the results panel covers the winner, so the end has no victory moment; snakes read
-  small on a phone (~10 px wide) - Arthur's playtest judges.
+  Open (polish): snakes read small on a phone (~10 px wide) - Arthur's playtest judges.
 - Cycle 6 done (boost, from the v3 build order): hold click / Space / a second finger / double-tap and
   hold. Speed and turn x2 while len > 20; burns max(4, 2% len)/s; each boosting tick drops a 1-crumb
   at its tail with chance burn/2 (first version dropped one per even length crossed, which over-drops
@@ -50,6 +49,13 @@ Branch: ts-rebuild (master keeps the Rust game until switch-over).
   `death <victim> <how> <killer> <s>` and `over <winner> <s>` (* = human; dev AI players count as
   human) to the dev server output: read it after Arthur's rounds for the cut-off share. 10 tests,
   typecheck, replay pass; log lines seen in the dev log.
+- Cycle 8 done (victory moment, polish): at the end the camera moves in on the winner (x1.6 zoom;
+  whole arena only after a draw), crown emoji on its head, confetti (gold, white, its color), banner
+  "X wins! wow" / "you win! wow" / "such draw! wow", a C-E-G-C "win" sound when I win (else gameOver),
+  results panel fades in after 2.5 s (CSS class "late", visibility hidden so it takes no taps).
+  Replay .playwright-mcp/end-replay.js (die at once, watch the bots, ~100 s): banner, panel hidden at
+  0.6 s and shown at 3.2 s, Play again works, no console errors. Confetti retuned after the capture
+  (bigger, longer, winner's color): not re-captured.
 
 ## Measured (bot-only, 100 seeds, free steering, 2026-10-05; grid numbers in git at 400a8da)
 - Round length p10 75 s, median 95 s, p90 108 s, max 111 s (target 60-120 s, max 2:30). Deaths: 96%
@@ -175,14 +181,15 @@ u = new-snake width. Bots obey all human rules.
 - Wire: step {tick, timeMs, wall, moved [id,x,y,a,ta,len,boost 0|1], deaths [id,killer,how], boops
   [a,b], eaten [crumb,id], spawned [crumb,x,y,v,owner]}; client {t:"steer", a} <= 10/s, first change
   at once, skip < 0.03 rad; {t:"boost", on} at once on change.
-- Client: camera on my head (1.2 s on my crumbs after death, then the longest); zoom
+- Client: camera on my head (1.2 s on my crumbs after death, then the longest; the winner at x1.6 at
+  the end, the whole arena after a draw); zoom
   sqrt(screen px^2/3500)/(1 + 0.3(w-1)); heads glide along their heading between ticks. Touch stick
   (12 px dead zone, anchor follows past 60 px, outranks the mouse); mouse = angle from screen center;
   arrows/WASD = 8 directions on keydown. Boost: mouse button, Space, a second finger, or a double tap
   (< 300 ms after a lift) held; window blur releases everything.
 - Text: "such 3 / very 2 / much 1 / WOW GO!", "X bonked by Y! wow", "X cut off by Y! wow",
   "X squished! such wall!", "wow. such ded.", "much bonk! wow", "such cut! wow", "much wall! wow",
-  "boop!".
+  "boop!", "X wins! wow", "you win! wow", "such draw! wow".
 
 ## Decisions
 - 2026-10-05 Stage plan, stack, public arena instead of queue, generated names, L1 for paid rooms:

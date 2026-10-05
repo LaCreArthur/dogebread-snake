@@ -9,6 +9,7 @@ const FLOOR = "#23233d";
 const GRID = "rgba(255,255,255,0.04)";
 const VIEW_U2 = 3500; // world area on screen for a new snake, on any device
 const DEATH_HOLD_MS = 1200;
+const WIN_ZOOM = 1.6; // the camera moves in on the winner at the end
 export const STICK_PX = 60; // touch steering: the anchor follows a finger farther than this
 
 /** Snake colors by id. The first 8 are the Rust game's palette. */
@@ -88,17 +89,19 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       return [x + Math.cos(s.a) * d, y + Math.sin(s.a) * d];
     };
 
-    // camera: my snake, held on my crumbs a moment after I die, then the longest; the whole arena at the end
+    // camera: my snake, held on my crumbs a moment after I die, then the longest; close on the winner
+    // at the end, or the whole arena after a draw
     const me = r.seat >= 0 ? m.snakes[r.seat] : undefined;
     if (me?.alive) seenAlive = now;
     const leader = m.snakes.filter((s) => s.alive).sort((a, b) => b.len - a.len)[0];
-    const focus = me?.alive || (me && now - seenAlive < DEATH_HOLD_MS) ? me : leader;
+    const champ = m.over && m.winner >= 0 ? m.snakes[m.winner] : undefined;
+    const focus = champ ?? (me?.alive || (me && now - seenAlive < DEATH_HOLD_MS) ? me : leader);
     let tx = 0;
     let ty = 0;
     let tk = Math.min(cw, ch) / (2 * m.r0 + 4);
-    if (focus && r.phase !== "over") {
+    if (focus && !(m.over && !champ)) {
       [tx, ty] = glide(focus);
-      tk = Math.sqrt((cw * ch) / VIEW_U2) / (1 + 0.3 * (width(focus.len) - 1));
+      tk = (Math.sqrt((cw * ch) / VIEW_U2) / (1 + 0.3 * (width(focus.len) - 1))) * (champ ? WIN_ZOOM : 1);
     }
     if (framed !== m) {
       framed = m;
@@ -242,6 +245,12 @@ export function createRenderer(canvas: HTMLCanvasElement) {
         ctx.fill();
       }
     }
+    if (champ) {
+      const [hx, hy] = head(champ);
+      const w = width(champ.len) * k;
+      ctx.font = `${Math.round(w * 1.5)}px sans-serif`;
+      ctx.fillText("👑", X(hx), Y(hy) - w * 0.8);
+    }
     if (input.stick) {
       const { ax, ay, x, y } = input.stick;
       ctx.strokeStyle = input.boost ? "rgba(232,176,74,0.8)" : "rgba(255,255,255,0.25)";
@@ -286,6 +295,8 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       for (let i = 0; i < sl.length; i += 2) spray(sl[i], sl[i + 1], i ? 2 : 12, i ? 4 : 8, 0.9, size, [color, ...CRUMBS]);
     },
     sparkle: (x: number, y: number) => spray(x, y, 6, 5, 0.4, 0.25, ["#ffd96a", "#fff6c8"]),
+    /** Confetti for the winner, in gold, white and its own color. */
+    cheer: (s: Snake) => spray(...head(s), 80, 22, 2.2, 0.5, ["#ffd96a", "#fff", snakeColor(s.id)]),
     pop: (x: number, y: number, text: string, color: string) => void pops.push({ x, y: y + 1, age: 0, text, color }),
     /** Strongest request wins; it decays over about a quarter second. */
     shake: (px: number) => void (shake = Math.max(shake, px)),
