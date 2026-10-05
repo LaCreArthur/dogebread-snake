@@ -1,7 +1,7 @@
 // Browser entry: home screen, room connection, lobby panel, HUD and input. All match state comes
 // from the server through the replica; this file only shows it and sends turns.
 import "./style.css";
-import { cx, cy, opposite, SEATS, shrinkWarning, type Dir } from "../game/rules";
+import { opposite, SEATS, shrinkWarning, type Dir } from "../game/rules";
 import { validName, type ClientMsg, type NameIdx, type ServerMsg, type StepMsg } from "../game/protocol";
 import { apply, newReplica, type Replica } from "../game/replica";
 import { createRenderer, snakeColor } from "./render";
@@ -102,8 +102,6 @@ function onMessage(msg: ServerMsg) {
   updateHud();
 }
 
-const dist = (a: number, b: number) => Math.abs(cx(a) - cx(b)) + Math.abs(cy(a) - cy(b));
-
 // feedback for what just happened; runs on the updated replica, so dead bodies include the fatal cell
 function onStep(msg: StepMsg, warned: boolean) {
   const m = r.m!;
@@ -123,8 +121,6 @@ function onStep(msg: StepMsg, warned: boolean) {
       view.pop(s.body[0], "+1 bonk", "#fff");
       view.shake(7);
       play("bonk");
-    } else if (me?.alive && dist(me.body[0], s.body[0]) < 12) {
-      view.shake(4);
     }
   }
   if (msg.deaths.length) play("death");
@@ -134,10 +130,7 @@ function onStep(msg: StepMsg, warned: boolean) {
     view.pop(c, "+1", "#e8b04a");
     play("eat");
   }
-  if (msg.shrunk) {
-    play("shrinkImpact");
-    view.shake(4);
-  }
+  if (msg.shrunk) play("shrinkImpact");
   if (msg.spedUp) {
     showBanner("much fast! wow!", 1500);
     play("speedUp");

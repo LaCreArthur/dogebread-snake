@@ -19,7 +19,7 @@ Branch: ts-rebuild (master keeps the Rust game until switch-over).
   HUD shows it) so Arthur can feel grid controls at deployed latency before the grid-vs-steering pick.
   Measured: lag=200 -> own turn visible after 232 ms.
 - Cycle 4 done (polish, design-neutral): dead snakes burst into crumb particles (replaces the 2 s grey
-  blink), screen shake (my death 14 px, my bonk 7, deaths within 12 cells and shrink 4), gold sparkle
+  blink), screen shake (my death 14 px, my bonk 7; nearby deaths and shrink cut after the attack), gold sparkle
   on every coin eaten, "+1" pop on my coins, "+1 bonk" pop + "much bonk! wow" banner + new procedural
   "bonk" sound on my kills, camera holds 1.2 s on my crumbs before following the leader, my own name
   label removed (it covered my pops; the ring marks me). Replay: .playwright-mcp/juice-replay.js
@@ -68,6 +68,50 @@ u = new-snake width. Bots obey all human rules.
   boost in round 1 >30%; first fix = own-head prediction); runaway/hiding leader (leader at 1:30 wins
   <60%, >=1 crown bonk/round); dead air/bot-run rooms (encounter every <=8 s, bot-caused human deaths
   20-35%, 0 bot wall deaths).
+
+### Attack (fresh agent 2026-10-05) and answers; v2 = v1 + every ACCEPT
+- Systemic: v1 feeds the leader 3 snowballs (flat boost cost, width-scaled magnet, unlimited crumbs in
+  the closing zone) then adds 3 bot counterweights (Hungry hunts bigger, Bonker hunts crown, 80% cap).
+  ACCEPT: delete both sets (fixes below).
+- Hook: ACCEPT + tag each kill cut-off (killer boosting, crossed the victim's path within 1 s) or
+  blunder; cut-off share is the POC pass/fail number.
+- Boost cost: ACCEPT ~2% of len/s, min 4/s (flat 8/s = 20%/s at len 40, 1%/s at 800).
+- Netcode: ACCEPT own-snake prediction from day one, others projected forward from angle + boost bit;
+  first input change sent at once, then throttled; server collides on the same 20 Hz path clients
+  draw. Delay budget: RTT + <=50 ms tick wait + <=100 ms throttle + 50-100 ms interp ~ 5 u at boost.
+- Boost gesture: ACCEPT A/B in the POC: thumb past a drawn outer ring vs double-tap-hold (+250 ms,
+  invisible).
+- Turtle ring: ACCEPT the problem (own body harmless + 4-width circle: past ~130-150 len a coiled
+  leader is untouchable, heads only bounce). Attack fix: burn (lost) length while the head overlaps
+  its own body. PARTIAL: a ring of radius >= body/2pi never overlaps, so ship the burn and measure
+  "leader at 2:00 wins <50%"; if rings persist, next candidates: own body lethal, or the final circle
+  closes to ~0.
+- Drops: ACCEPT only length above 40 drops on death (suicide farming); boost drops lose half; a
+  snake cannot eat its own drops (friend feeding, crumb banking).
+- Head-head: ACCEPT rename "boop" (BONK = kill only); both lose a few slices (no free shove).
+- Crumb density: ACCEPT no spawning after 2:00, the wall sweeps crumbs inward, deaths feed the finale
+  (v1 held 400 inside the closing wall: ~2,200 len in the last minute vs ~1,400 in the first two).
+- Spawns: ACCEPT score points inside 70% radius against heads AND bodies, face center, no ghost
+  (ghost-laying exploit).
+- Endless no-zone arena (v1 section 5): ACCEPT cut; stage 2 public arena gets its own design.
+- Retention: ACCEPT wins count only with 2+ humans; the room win tally lives in the Room DO.
+- Bots: ACCEPT one type (graze, ignore golden crumbs, dodge late, never target by rank), no 80% cap,
+  arena radius ~ sqrt(snake count). PARTIAL on "bots <= half the room": keep a floor of 6 snakes so
+  solo and duo rooms (Arthur's main test today) have action. Max 10 humans (VISION.md).
+- Magnet: ACCEPT constant ~2 u (width-scaled = 2.5x eat rate at full width). Winning range: re-measure.
+- Onboarding: ACCEPT teach the cut-off (slow Snacc crossing ahead, "boost across its nose"); "much
+  zoom" reads as camera zoom, rename. Deferred until after the POC.
+- Juice: ACCEPT shake only on my death or my bonk (applied to the grid build 2026-10-05); the
+  face-turn is replaced by prediction.
+- Refresh to deny a kill: ACCEPT a disconnected snake keeps its last input until it dies or returns.
+- Pot rounds: ACCEPT roster lock to Ready players (stage 3).
+- Money/legal: DISMISS (Arthur 2026-10-05: no gambling-law analysis, fun non-commercial POC; the
+  custodial L1 design stands).
+- POC scope ACCEPT: 1 room of 6-8 snakes, phone + desktop steer/boost, prediction, cut-off kills with
+  25/50 drops, boop, safe 2 s respawn at 40, self-overlap burn, crumbs, 3:00 round + closing wall (no
+  late spawns), crown arrow, kill feed, auto rematch, 1 bot type, lag 0/150/300. Defer: pot, skins,
+  titles, bests, onboarding, bot tiers, revenge, most juice, public arena. Pass/fail: cut-off share;
+  deaths called fair at 300 ms; leader at 2:00 wins <50%; friends start a 3rd round.
 
 ## Rules reference (ported from the Rust game, client/src + shared/src)
 - Grid 60x60, walls at 0 and 59, playable 1..58. 10 snakes, 35 food, initial length 5.
