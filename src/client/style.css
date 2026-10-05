@@ -46,9 +46,13 @@ canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; t
 #panel h1 { margin: 0; font-size: 28px; color: var(--gold); }
 #panel h2 { margin: 0; font-size: 20px; }
 #panel p { margin: 0; color: var(--muted); }
-#panel ul { list-style: none; margin: 0; padding: 0; text-align: left; }
+#panel ul, #panel ol { list-style: none; margin: 0; padding: 0; text-align: left; }
 #panel li { padding: 6px 10px; border-bottom: 1px solid var(--line); }
 #panel li:last-child { border-bottom: 0; }
+.results li { display: grid; grid-template-columns: 2.2em minmax(0, 1fr) auto 2.8em; gap: 8px; }
+.results li > :nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.results li > :nth-child(n+3) { color: var(--muted); text-align: right; }
+.results li.me { background: rgba(232, 176, 74, 0.15); border-radius: 8px; }
 .row { display: flex; gap: 8px; }
 .row > * { flex: 1; }
 .code { font-size: 32px; letter-spacing: 6px; color: var(--gold); }

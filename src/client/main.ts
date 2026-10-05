@@ -1,7 +1,7 @@
 // Browser entry: home screen, room connection, lobby panel, HUD and input. All match state comes
 // from the server through the replica; this file only shows it and sends my heading.
 import "./style.css";
-import { boosting, head, SEATS, WALL_HOLD_MS, wrap } from "../game/rules";
+import { boosting, head, SEATS, TICK_MS, WALL_HOLD_MS, wrap } from "../game/rules";
 import { validName, type ClientMsg, type NameIdx, type ServerMsg, type StepMsg } from "../game/protocol";
 import { apply, newReplica, type Replica } from "../game/replica";
 import { createRenderer, snakeColor, STICK_PX, type Input } from "./render";
@@ -344,20 +344,38 @@ function renderPanel() {
   const start = me?.host
     ? h("button", { className: "main", textContent: r.phase === "over" ? "Play again" : "Start", onclick: () => send({ t: "start" }) })
     : h("p", { textContent: `Waiting for ${host?.name ?? "the host"} to start.` });
-  const top = r.phase === "over" && r.m ? [h("h2", { textContent: resultText() })] : [h("h1", { textContent: "DogeBread Snake" })];
-  const place = r.rank.indexOf(r.seat) + 1;
-  panel.hidden = false;
-  panel.replaceChildren(
-    ...top,
-    ...(r.phase === "over" && place ? [h("p", { textContent: `You placed #${place} of ${r.rank.length}.` })] : []),
+  const room = [
     h("div", { className: "code", textContent: r.code }),
     invite,
     h("ul", {}, ...r.players.map((p) => h("li", { textContent: `${p.name}${p.id === r.you ? " (you)" : ""}${p.host ? " 👑" : ""}` }))),
     h("p", { textContent: `${Math.min(r.players.length, SEATS)}/${SEATS} players. Bots fill the empty seats.` }),
-    h("div", { className: "row" }, h("button", { textContent: "New name", onclick: () => send({ t: "name" }) }), start),
+  ];
+  const actions = h("div", { className: "row" }, h("button", { textContent: "New name", onclick: () => send({ t: "name" }) }), start);
+  panel.hidden = false;
+  panel.replaceChildren(
+    // after a round, the results and the next round come first
+    ...(r.phase === "over" && r.m
+      ? [h("h2", { textContent: resultText() }), results(), actions, ...room]
+      : [h("h1", { textContent: "DogeBread Snake" }), ...room, actions]),
     ...devButtons(),
   );
 }
+
+/** Every snake of the round, best first: place, name, bonks, time alive. */
+function results() {
+  const m = r.m!;
+  return h("ol", { className: "results" }, ...r.rank.map((id, i) => {
+    const s = m.snakes[id];
+    const name = h("span", { textContent: `${s.name}${id === m.winner ? " 👑" : ""}${id === r.seat ? " (you)" : ""}` });
+    name.style.color = snakeColor(id);
+    const lived = ((s.alive ? m.tick : s.diedTick) * TICK_MS) / 1000;
+    return h("li", { className: id === r.seat ? "me" : "" },
+      h("span", { textContent: `#${i + 1}` }), name,
+      h("span", { textContent: `${s.kills} bonk${s.kills === 1 ? "" : "s"}` }), h("span", { textContent: clock(lived) }));
+  }));
+}
+
+const clock = (seconds: number) => `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`;
 
 function resultText() {
   const m = r.m!;
@@ -373,10 +391,9 @@ function updateHud() {
   const m = r.m;
   if (!m || r.phase === "lobby") return void (hud.textContent = "");
   const alive = m.snakes.filter((s) => s.alive).length;
-  const t = Math.floor(m.timeMs / 1000);
   const me = r.seat >= 0 ? m.snakes[r.seat] : undefined;
   hud.innerHTML = `<span>alive <b>${alive}/${m.snakes.length}</b></span>` +
-    `<span><b>${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}</b></span>` +
+    `<span><b>${clock(m.timeMs / 1000)}</b></span>` +
     (me ? `<span>size <b>${Math.floor(me.len)}</b></span><span>bonks <b>${me.kills}</b></span>` : "<span>watching</span>") +
     (lag ? `<span>lag <b>${lag}</b></span>` : "");
 }

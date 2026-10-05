@@ -55,7 +55,11 @@ Branch: ts-rebuild (master keeps the Rust game until switch-over).
   results panel fades in after 2.5 s (CSS class "late", visibility hidden so it takes no taps).
   Replay .playwright-mcp/end-replay.js (die at once, watch the bots, ~100 s): banner, panel hidden at
   0.6 s and shown at 3.2 s, Play again works, no console errors. Confetti retuned after the capture
-  (bigger, longer, winner's color): not re-captured.
+  (bigger, longer, winner's color): re-captured in cycle 9, reads as confetti.
+- Cycle 9 done (results panel, UI): after a round the panel shows every snake best first (place,
+  name in its color, crown, "(you)", bonks, time alive; my row gold-tinted), then New name / Play
+  again, then the room code, invite and players. Deleted "You placed #N of M." (the table shows it).
+  end-replay.js capture at 390x844 with 1 human: fits without scrolling, no console errors.
 
 ## Measured (bot-only, 100 seeds, free steering, 2026-10-05; grid numbers in git at 400a8da)
 - Round length p10 75 s, median 95 s, p90 108 s, max 111 s (target 60-120 s, max 2:30). Deaths: 96%
