@@ -42,7 +42,14 @@ Branch: ts-rebuild (master keeps the Rust game until switch-over).
   Boosting glow (pulsing white halo), gold stick ring, zoom sound. Wire: moved + boost 0/1, spawned +
   owner, client {t:"boost", on}. typecheck (both tsconfigs), 9 vitest tests (soak toggles boost on 3
   snakes), build pass (17.0 kB JS, 7.7 kB gzip). Headless replay at 390x844: double-tap-hold boost
-  for 20 ticks moved 15.9 u (2x), lifting stops it, no console errors. Cut-off tagging not built yet.
+  for 20 ticks moved 15.9 u (2x), lifting stops it, no console errors.
+- Cycle 7 done (cut-off tagging, the rest of build item 6): a bonk is "cut" when the killer is
+  boosting and its head was at the touched slice <= 1 s ago (trail walk; any boosting snake under
+  ~len 64 is younger than 1 s end to end). Kill credit tie-break is now the touched slice nearest a
+  head (was the last one found). Feed "X cut off by Y! wow", my banner "such cut! wow". The room logs
+  `death <victim> <how> <killer> <s>` and `over <winner> <s>` (* = human; dev AI players count as
+  human) to the dev server output: read it after Arthur's rounds for the cut-off share. 10 tests,
+  typecheck, replay pass; log lines seen in the dev log.
 
 ## Measured (bot-only, 100 seeds, free steering, 2026-10-05; grid numbers in git at 400a8da)
 - Round length p10 75 s, median 95 s, p90 108 s, max 111 s (target 60-120 s, max 2:30). Deaths: 96%
@@ -151,7 +158,8 @@ u = new-snake width. Bots obey all human rules.
   heading. Body = trail of head positions (1 per tick, 0.01 u), resampled every 0.5 u into
   ceil(len/4) slices; width 1 + (len-40)/400, cap 2.5. Start len 40, min 20.
 - Contacts on post-move bodies, contact = (wa+wb)/2*0.8: head on another snake's slice >= 3 -> death,
-  owner gets the kill + len/4; slices 0-2 -> boop: heads pushed apart, faced apart, both -8 len.
+  owner gets the kill + len/4 (tagged "cut" when it is boosting and its head was there <= 1 s ago);
+  slices 0-2 -> boop: heads pushed apart, faced apart, both -8 len.
   Own body harmless. |head| + w/2*0.8 > wall -> death. Death drops floor(len/2/5) golden crumbs
   (5 len) along the body; the rest is lost.
 - Crumbs: 400 per pi*75^2 kept full until 20 s; eaten within w/2 + 2 u of the head (lower id wins a
@@ -172,8 +180,9 @@ u = new-snake width. Bots obey all human rules.
   (12 px dead zone, anchor follows past 60 px, outranks the mouse); mouse = angle from screen center;
   arrows/WASD = 8 directions on keydown. Boost: mouse button, Space, a second finger, or a double tap
   (< 300 ms after a lift) held; window blur releases everything.
-- Text: "such 3 / very 2 / much 1 / WOW GO!", "X bonked by Y! wow", "X squished! such wall!",
-  "wow. such ded.", "much bonk! wow", "much wall! wow", "boop!".
+- Text: "such 3 / very 2 / much 1 / WOW GO!", "X bonked by Y! wow", "X cut off by Y! wow",
+  "X squished! such wall!", "wow. such ded.", "much bonk! wow", "such cut! wow", "much wall! wow",
+  "boop!".
 
 ## Decisions
 - 2026-10-05 Stage plan, stack, public arena instead of queue, generated names, L1 for paid rooms:

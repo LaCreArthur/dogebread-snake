@@ -141,7 +141,10 @@ export class Room extends DurableObject<Env> {
     this.timer = setTimeout(() => {
       const r = step(m);
       this.broadcast({ t: "step", tick: m.tick, timeMs: m.timeMs, wall: m.wall, ...r });
+      // one line per death and per end, the playtest numbers (cut-off share, death times)
+      for (const [id, killer, how] of r.deaths) console.log(`death ${who(m, id)} ${how} ${who(m, killer)} ${m.timeMs / 1000}s`);
       if (!m.over) return this.loop();
+      console.log(`over ${who(m, m.winner)} ${m.timeMs / 1000}s`);
       this.phase = "over";
       this.broadcast({ t: "over", winner: m.winner, rank: ranking(m) });
       this.players = this.players.filter((p) => p.ws);
@@ -210,4 +213,10 @@ function trySend(ws: WebSocket, data: string) {
 
 function publicMatch({ rng: _, nextCrumb: __, ...m }: Match) {
   return m;
+}
+
+/** A snake's name for the logs, starred when a human plays it; "-" for no snake (the wall, a draw). */
+function who(m: Match, id: number) {
+  const s = m.snakes[id];
+  return s ? `${s.name}${s.human ? "*" : ""}` : "-";
 }

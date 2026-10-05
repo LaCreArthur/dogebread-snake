@@ -75,6 +75,14 @@ describe("contacts", () => {
     expect([m.over, m.winner]).toEqual([true, 1]);
   });
 
+  it("a boosting snake that just crossed a nose cuts it off; the same crossing without boost is a plain bonk", () => {
+    for (const on of [true, false]) {
+      const m = arena([1, 0, 0], [1.6, 2, Math.PI / 2]);
+      boost(m, 1, on);
+      expect(step(m).deaths, `boost ${on}`).toEqual([[0, 1, on ? "cut" : "bonk"]]);
+    }
+  });
+
   it("heads that meet boop: both live, both pay length, they face apart and do not boop again", () => {
     const m = arena([0, 0, 0], [1.5, 0, Math.PI]);
     const r = step(m);

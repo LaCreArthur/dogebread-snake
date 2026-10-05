@@ -133,14 +133,15 @@ function onStep(msg: StepMsg, before: number) {
   const m = r.m!;
   for (const [id, killer, how] of msg.deaths) {
     const s = m.snakes[id];
-    addFeed(how === "wall" ? `${s.name} squished! such wall!` : `${s.name} bonked by ${m.snakes[killer].name}! wow`, snakeColor(id));
+    const by = how === "cut" ? "cut off" : "bonked";
+    addFeed(how === "wall" ? `${s.name} squished! such wall!` : `${s.name} ${by} by ${m.snakes[killer].name}! wow`, snakeColor(id));
     view.burst(s, snakeColor(id));
     if (id === r.seat) {
       showBanner("wow. such ded.", 2500);
       view.shake(14);
     } else if (killer >= 0 && killer === r.seat) {
       const [x, y] = head(s);
-      showBanner("much bonk! wow", 1200);
+      showBanner(how === "cut" ? "such cut! wow" : "much bonk! wow", 1200);
       view.pop(x, y, "+1 bonk", "#fff");
       view.shake(7);
       play("bonk");

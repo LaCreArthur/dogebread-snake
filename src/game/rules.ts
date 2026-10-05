@@ -20,6 +20,7 @@ export const GOLD = 5; // length in one crumb dropped by a death
 const HIT = 0.8; // contact radius factor: grazes are forgiven
 const BOOP_SLICES = 3; // a head touching another head or its first slices boops instead of dying
 const BOOP_COST = 8; // length each snake loses in a boop
+const CUT_TICKS = 1000 / TICK_MS; // a bonk is a cut-off when a boosting killer crossed the victim's path this recently
 export const WALL_HOLD_MS = 20_000; // full arena; food keeps spawning
 const WALL_CLOSE_MS = 90_000; // then the wall closes to WALL_MIN
 const WALL_MIN = 8;
@@ -43,7 +44,7 @@ function wallRadius(r0: number, ms: number) {
   return Math.max(0, WALL_MIN * (1 - (t - WALL_CLOSE_MS) / WALL_END_MS));
 }
 
-export type Death = "bonk" | "wall";
+export type Death = "bonk" | "cut" | "wall";
 
 export interface Snake {
   id: number;
@@ -318,15 +319,16 @@ export function step(m: Match): StepResult {
       continue;
     }
     let killer = -1;
+    let hit = Infinity; // the killer's slice that was touched, nearest to its head
     let booped = -1;
     near(b, x, y, (id, k, sx, sy) => {
       if (id === s.id) return; // your own body is harmless
       const reach = ((w + b.widths[id]) / 2) * HIT;
       if ((sx - x) ** 2 + (sy - y) ** 2 >= reach * reach) return;
-      if (k >= BOOP_SLICES) killer = id;
-      else booped = id;
+      if (k < BOOP_SLICES) booped = id;
+      else if (k < hit) [killer, hit] = [id, k];
     });
-    if (killer >= 0) dead.set(s.id, [killer, "bonk"]);
+    if (killer >= 0) dead.set(s.id, [killer, cutOff(m.snakes[killer], hit) ? "cut" : "bonk"]);
     else if (booped >= 0) {
       const pair: [number, number] = [Math.min(s.id, booped), Math.max(s.id, booped)];
       boops.set(pair[0] * 64 + pair[1], pair);
@@ -422,6 +424,16 @@ function endIfDecided(m: Match) {
   if (alive.length > 1) return;
   m.over = true;
   m.winner = alive[0]?.id ?? -1;
+}
+
+/** Is the killer boosting, with its head where its slice k is now less than CUT_TICKS ago? */
+function cutOff(s: Snake, k: number) {
+  const t = s.trail; // one head position per tick, newest last
+  let d = k * SLICE_GAP;
+  for (let i = t.length - 2; d > 0 && i >= 2 && i > t.length - 2 - 2 * CUT_TICKS; i -= 2) {
+    d -= Math.hypot(t[i] - t[i - 2], t[i + 1] - t[i - 1]);
+  }
+  return boosting(s) && d <= 0;
 }
 
 /** Best first: alive, then died later, then bonks, then length. */
