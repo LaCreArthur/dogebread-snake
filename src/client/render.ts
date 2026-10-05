@@ -26,16 +26,35 @@ const image = (src: string) => Object.assign(new Image(), { src });
 const dogeHead = image("/doge_head.png");
 const coin = image("/coin.png");
 
-export interface Overlay {
-  pending: Dir | -1; // my turn, sent but not applied yet
-  deathAt: Map<number, number>; // snake id -> time of death (ms), for the death blink
-}
+const font = (size: number) => `bold ${Math.round(size)}px "Comic Sans MS", "Chalkboard SE", cursive`;
+
+// effects live in grid units (+y up), like the snakes
+interface Particle { x: number; y: number; vx: number; vy: number; age: number; life: number; size: number; color: string }
+interface Pop { x: number; y: number; age: number; text: string; color: string }
+const CRUMBS = ["#f0cf8a", "#c98a3f"]; // bread crumb, crust
+const POP_S = 0.9;
+const DEATH_HOLD_MS = 1200;
 
 export function createRenderer(canvas: HTMLCanvasElement) {
   const ctx = canvas.getContext("2d")!;
   let cam = { x: W / 2, y: H / 2, cs: MIN_CELL };
   let framed: object | null = null; // the match the camera last jumped to
   let last = performance.now();
+  const parts: Particle[] = [];
+  const pops: Pop[] = [];
+  let shake = 0; // px, decays every frame
+  let seenAlive = -Infinity; // last frame my snake was alive
+
+  const spray = (c: number, n: number, speed: number, life: number, size: number, colors: string[]) => {
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * 2 * Math.PI;
+      const v = speed * (0.3 + 0.7 * Math.random());
+      parts.push({
+        x: cx(c) + 0.5, y: cy(c) + 0.5, vx: Math.cos(a) * v, vy: Math.sin(a) * v,
+        age: 0, life: life * (0.6 + 0.4 * Math.random()), size, color: colors[i % colors.length],
+      });
+    }
+  };
 
   const resize = () => {
     const dpr = Math.min(devicePixelRatio || 1, 2);
@@ -47,7 +66,7 @@ export function createRenderer(canvas: HTMLCanvasElement) {
   addEventListener("resize", resize);
   resize();
 
-  return function draw(r: Replica, o: Overlay, now: number) {
+  function draw(r: Replica, pending: Dir | -1, now: number) {
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
     const cw = innerWidth;
@@ -67,7 +86,9 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     const tcs = over ? fit : Math.max(MIN_CELL, fit);
     const me = r.seat >= 0 ? m.snakes[r.seat] : undefined;
     const leader = m.snakes.filter((s) => s.alive).sort((a, b) => b.score - a.score)[0];
-    const focus = (me?.alive ? me : leader)?.body[0];
+    // after my death the camera stays on my crumbs for a moment, then follows the leader
+    if (me?.alive) seenAlive = now;
+    const focus = (me?.alive || now - seenAlive < DEATH_HOLD_MS ? me : leader)?.body[0];
     const clamp = (v: number, lo: number, hi: number) => (lo > hi ? (lo + hi) / 2 : Math.min(hi, Math.max(lo, v)));
     const tx = clamp(focus === undefined ? W / 2 : cx(focus) + 0.5, ax0 + aw / 2 / tcs, ax1 - aw / 2 / tcs);
     const ty = clamp(focus === undefined ? H / 2 : cy(focus) + 0.5, ay0 + ah / 2 / tcs, ay1 - ah / 2 / tcs);
@@ -79,10 +100,12 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     const kz = 1 - Math.exp(-dt * 3);
     cam = { x: cam.x + (tx - cam.x) * kp, y: cam.y + (ty - cam.y) * kp, cs: cam.cs + (tcs - cam.cs) * kz };
     const cs = cam.cs;
-    const sx = cw / 2;
-    const sy = HUD_HEIGHT + PAD + ah / 2;
+    shake *= Math.exp(-dt * 10);
+    const sx = cw / 2 + (Math.random() * 2 - 1) * shake;
+    const sy = HUD_HEIGHT + PAD + ah / 2 + (Math.random() * 2 - 1) * shake;
     const px = (x: number) => sx + (x - cam.x) * cs;
-    const py = (y: number) => sy - (y + 1 - cam.y) * cs; // top edge of row y
+    const wy = (y: number) => sy - (y - cam.y) * cs;
+    const py = (y: number) => wy(y + 1); // top edge of row y
     const sprite = (img: HTMLImageElement, c: number, size: number) => {
       if (img.complete) ctx.drawImage(img, px(cx(c)) + (cs - size) / 2, py(cy(c)) + (cs - size) / 2, size, size);
     };
@@ -113,30 +136,46 @@ export function createRenderer(canvas: HTMLCanvasElement) {
 
     const gap = cs >= 6 ? 1 : 0;
     for (const s of m.snakes) {
-      if (!s.alive) {
-        const age = now - (o.deathAt.get(s.id) ?? -Infinity);
-        if (age > 2000 || Math.floor(age / 120) % 2) continue;
-        ctx.globalAlpha = 0.5;
-      }
-      ctx.fillStyle = s.alive ? snakeColor(s.id, 0.7) : "#888";
+      if (!s.alive) continue; // dead snakes burst into crumbs instead
+      ctx.fillStyle = snakeColor(s.id, 0.7);
       for (let i = s.body.length - 1; i >= 1; i--) {
         const c = s.body[i];
         ctx.fillRect(px(cx(c)) + gap, py(cy(c)) + gap, cs - gap * 2, cs - gap * 2);
       }
       sprite(dogeHead, s.body[0], cs * 1.3);
-      ctx.globalAlpha = 1;
     }
 
-    // names over human snakes; my head gets a ring and my queued turn an arrow
-    ctx.font = `bold ${Math.round(Math.max(10, Math.min(14, cs)))}px "Comic Sans MS", "Chalkboard SE", cursive`;
+    const drag = Math.exp(-dt * 3);
+    for (let i = parts.length - 1; i >= 0; i--) {
+      const p = parts[i];
+      p.age += dt;
+      if (p.age >= p.life) {
+        parts[i] = parts[parts.length - 1]; // already updated this frame
+        parts.pop();
+        continue;
+      }
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.vx *= drag;
+      p.vy *= drag;
+      const size = p.size * cs;
+      ctx.globalAlpha = 1 - p.age / p.life;
+      ctx.fillStyle = p.color;
+      ctx.fillRect(px(p.x) - size / 2, wy(p.y) - size / 2, size, size);
+    }
+    ctx.globalAlpha = 1;
+
+    // names over other human snakes (mine would hide my reward pops); my head gets a ring and my
+    // queued turn an arrow
+    ctx.font = font(Math.max(10, Math.min(14, cs)));
     ctx.textAlign = "center";
     for (const s of m.snakes) {
-      if (!s.alive || !s.human) continue;
+      if (!s.alive || !s.human || s.id === r.seat) continue;
       const x = px(cx(s.body[0])) + cs / 2;
       const y = py(cy(s.body[0])) - cs * 0.4;
       ctx.fillStyle = "rgba(0,0,0,0.6)";
       ctx.fillText(s.name, x + 1, y + 1);
-      ctx.fillStyle = s.id === r.seat ? "#fff" : snakeColor(s.id);
+      ctx.fillStyle = snakeColor(s.id);
       ctx.fillText(s.name, x, y);
     }
     if (me?.alive) {
@@ -145,10 +184,10 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       ctx.strokeStyle = "#fff";
       ctx.lineWidth = 2;
       ctx.strokeRect(hx - cs * 0.2, hy - cs * 0.2, cs * 1.4, cs * 1.4);
-      if (o.pending !== -1) {
-        const mx = hx + cs / 2 + DX[o.pending] * cs * 1.4;
-        const my = hy + cs / 2 - DY[o.pending] * cs * 1.4;
-        const a = Math.atan2(-DY[o.pending], DX[o.pending]);
+      if (pending !== -1) {
+        const mx = hx + cs / 2 + DX[pending] * cs * 1.4;
+        const my = hy + cs / 2 - DY[pending] * cs * 1.4;
+        const a = Math.atan2(-DY[pending], DX[pending]);
         const s = Math.max(5, cs * 0.6);
         ctx.fillStyle = "#fff";
         ctx.beginPath();
@@ -158,5 +197,37 @@ export function createRenderer(canvas: HTMLCanvasElement) {
         ctx.fill();
       }
     }
+
+    // reward text floats up and fades; a dark outline keeps it readable over any snake
+    ctx.font = font(Math.max(14, cs * 1.2));
+    ctx.lineWidth = 3;
+    ctx.lineJoin = "round";
+    ctx.strokeStyle = "rgba(0,0,0,0.7)";
+    for (let i = pops.length - 1; i >= 0; i--) {
+      const p = pops[i];
+      p.age += dt;
+      if (p.age >= POP_S) {
+        pops.splice(i, 1);
+        continue;
+      }
+      const x = px(p.x);
+      const y = wy(p.y + p.age * 2);
+      ctx.globalAlpha = Math.min(1, (POP_S - p.age) * 5);
+      ctx.strokeText(p.text, x, y);
+      ctx.fillStyle = p.color;
+      ctx.fillText(p.text, x, y);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  return {
+    draw,
+    /** A dead snake bursts into crumbs: a handful per slice, more from the head. */
+    burst: (body: number[], color: string) =>
+      body.forEach((c, i) => spray(c, i ? 3 : 12, i ? 4 : 8, 0.9, 0.35, [color, ...CRUMBS])),
+    sparkle: (c: number) => spray(c, 6, 5, 0.4, 0.22, ["#ffd96a", "#fff6c8"]),
+    pop: (c: number, text: string, color: string) => void pops.push({ x: cx(c) + 0.5, y: cy(c) + 1, age: 0, text, color }),
+    /** Strongest request wins; it decays over about a quarter second. */
+    shake: (px: number) => void (shake = Math.max(shake, px)),
   };
 }

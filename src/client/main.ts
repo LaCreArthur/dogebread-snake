@@ -1,10 +1,10 @@
 // Browser entry: home screen, room connection, lobby panel, HUD and input. All match state comes
 // from the server through the replica; this file only shows it and sends turns.
 import "./style.css";
-import { opposite, SEATS, shrinkWarning, type Dir } from "../game/rules";
-import { validName, type ClientMsg, type NameIdx, type ServerMsg } from "../game/protocol";
+import { cx, cy, opposite, SEATS, shrinkWarning, type Dir } from "../game/rules";
+import { validName, type ClientMsg, type NameIdx, type ServerMsg, type StepMsg } from "../game/protocol";
 import { apply, newReplica, type Replica } from "../game/replica";
-import { createRenderer, snakeColor, type Overlay } from "./render";
+import { createRenderer, snakeColor } from "./render";
 import { wsUrl } from "./net";
 import { isMuted, play, toggleMute } from "./sound";
 
@@ -15,7 +15,7 @@ const banner = $("banner");
 const panel = $("panel");
 const canvas = $("game") as HTMLCanvasElement;
 const mute = $("mute");
-const draw = createRenderer(canvas);
+const view = createRenderer(canvas);
 const CODE = /^[2-9A-HJKMNP-Z]{5}$/;
 // dev: ?lag=MS adds MS of round trip (half each way), to feel a deployed room on localhost
 const lag = import.meta.env.DEV ? Number(new URLSearchParams(location.search).get("lag")) || 0 : 0;
@@ -38,7 +38,7 @@ const savedName = (): NameIdx | null => {
 };
 
 let r: Replica = newReplica();
-const overlay: Overlay = { pending: -1, deathAt: new Map() };
+let pending: Dir | -1 = -1; // my turn, sent but not applied yet
 let pendingTick = 0;
 let countdownEnd = -Infinity;
 let bannerText = "";
@@ -83,27 +83,9 @@ function onMessage(msg: ServerMsg) {
   const warned = r.m !== null && shrinkWarning(r.m);
   if (msg.t === "snap") {
     countdownEnd = msg.countdownMs ? now + msg.countdownMs : -Infinity;
-    overlay.deathAt.clear();
-    overlay.pending = -1;
+    pending = -1;
     feed.replaceChildren();
     bannerUntil = 0;
-  } else if (msg.t === "step" && r.m) {
-    for (const [id, killer, how] of msg.deaths) {
-      overlay.deathAt.set(id, now);
-      const name = r.m.snakes[id].name;
-      const text = how === "crushed" ? `${name} crushed! such squish!`
-        : killer >= 0 ? `${name} bonked by ${r.m.snakes[killer].name}! wow`
-        : `${name} ded! much rip!`;
-      addFeed(text, snakeColor(id));
-      if (id === r.seat) showBanner("wow. such ded.", 2500);
-    }
-    if (msg.deaths.length) play("death");
-    if (msg.eaten.some(([id]) => id === r.seat)) play("eat");
-    if (msg.shrunk) play("shrinkImpact");
-    if (msg.spedUp) {
-      showBanner("much fast! wow!", 1500);
-      play("speedUp");
-    }
   }
 
   apply(r, msg);
@@ -114,12 +96,54 @@ function onMessage(msg: ServerMsg) {
   } else if (msg.t === "over") {
     play("gameOver");
     renderPanel();
-  } else if (msg.t === "step") {
-    if (!warned && shrinkWarning(r.m!)) play("shrinkWarning");
-    const me = r.m?.snakes[r.seat];
-    if (overlay.pending !== -1 && (!me?.alive || me.dir === overlay.pending || msg.tick >= pendingTick + 2)) overlay.pending = -1;
+  } else if (msg.t === "step" && r.m) {
+    onStep(msg, warned);
   }
   updateHud();
+}
+
+const dist = (a: number, b: number) => Math.abs(cx(a) - cx(b)) + Math.abs(cy(a) - cy(b));
+
+// feedback for what just happened; runs on the updated replica, so dead bodies include the fatal cell
+function onStep(msg: StepMsg, warned: boolean) {
+  const m = r.m!;
+  const me = r.seat >= 0 ? m.snakes[r.seat] : undefined;
+  for (const [id, killer, how] of msg.deaths) {
+    const s = m.snakes[id];
+    const text = how === "crushed" ? `${s.name} crushed! such squish!`
+      : killer >= 0 ? `${s.name} bonked by ${m.snakes[killer].name}! wow`
+      : `${s.name} ded! much rip!`;
+    addFeed(text, snakeColor(id));
+    view.burst(s.body, snakeColor(id));
+    if (id === r.seat) {
+      showBanner("wow. such ded.", 2500);
+      view.shake(14);
+    } else if (killer >= 0 && killer === r.seat) {
+      showBanner("much bonk! wow", 1200);
+      view.pop(s.body[0], "+1 bonk", "#fff");
+      view.shake(7);
+      play("bonk");
+    } else if (me?.alive && dist(me.body[0], s.body[0]) < 12) {
+      view.shake(4);
+    }
+  }
+  if (msg.deaths.length) play("death");
+  for (const [id, c] of msg.eaten) {
+    view.sparkle(c);
+    if (id !== r.seat) continue;
+    view.pop(c, "+1", "#e8b04a");
+    play("eat");
+  }
+  if (msg.shrunk) {
+    play("shrinkImpact");
+    view.shake(4);
+  }
+  if (msg.spedUp) {
+    showBanner("much fast! wow!", 1500);
+    play("speedUp");
+  }
+  if (!warned && shrinkWarning(m)) play("shrinkWarning");
+  if (pending !== -1 && (!me?.alive || me.dir === pending || msg.tick >= pendingTick + 2)) pending = -1;
 }
 
 // ---- input
@@ -127,9 +151,9 @@ function onMessage(msg: ServerMsg) {
 function sendTurn(d: Dir) {
   const me = r.m && r.seat >= 0 ? r.m.snakes[r.seat] : undefined;
   if (!me?.alive || (r.phase !== "playing" && r.phase !== "countdown")) return;
-  if (d === opposite(me.dir) || d === (overlay.pending === -1 ? me.dir : overlay.pending)) return;
+  if (d === opposite(me.dir) || d === (pending === -1 ? me.dir : pending)) return;
   send({ t: "turn", d });
-  overlay.pending = d;
+  pending = d;
   pendingTick = r.m!.tick;
 }
 
@@ -266,7 +290,7 @@ function showBanner(text: string, ms: number) {
 }
 
 function frame(now: number) {
-  draw(r, overlay, now);
+  view.draw(r, pending, now);
   const left = countdownEnd - now;
   const text = left > 2500 ? "such 3" : left > 1500 ? "very 2" : left > 500 ? "much 1" : left > -500 ? "WOW GO!"
     : now < bannerUntil ? bannerText : "";

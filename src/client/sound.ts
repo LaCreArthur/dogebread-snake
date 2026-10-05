@@ -31,6 +31,8 @@ const DEFS = {
     Math.sqrt(1 - t / d) * 0.5],
   gameOver: [0.5, () => (t, d) =>
     Math.sin(TAU * (800 - (600 * t) / d) * (1 + 0.02 * Math.sin(TAU * 6 * t)) * t) * Math.sqrt(1 - t / d) * 0.45],
+  // not in the Rust game: my bonk, a "boing" falling from 320 to 120 Hz
+  bonk: [0.18, () => (t, d) => Math.sin(TAU * (320 * t - (100 * t * t) / d)) * (1 - t / d) ** 2 * 0.6],
 } satisfies Record<string, [seconds: number, make: () => Wave]>;
 
 export type Sound = keyof typeof DEFS;
