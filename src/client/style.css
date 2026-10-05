@@ -1,0 +1,55 @@
+:root {
+  --bg: #1a1a2e;
+  --card: #26264a;
+  --line: #3a3a66;
+  --text: #f2ecd8;
+  --muted: #a8a3c4;
+  --gold: #e8b04a;
+  font-family: "Comic Sans MS", "Chalkboard SE", "Comic Neue", cursive;
+  color: var(--text);
+  background: var(--bg);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); }
+canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+
+#hud {
+  position: fixed; top: 0; left: 0; right: 0; height: 44px; padding: 0 16px;
+  padding-top: env(safe-area-inset-top);
+  display: flex; align-items: center; justify-content: center; gap: 16px;
+  font-size: 15px; pointer-events: none; white-space: nowrap;
+}
+#hud b { color: var(--gold); }
+#feed {
+  position: fixed; top: 52px; right: 12px; display: flex; flex-direction: column; align-items: flex-end;
+  gap: 4px; font-size: 13px; pointer-events: none;
+}
+#feed div { background: rgba(0, 0, 0, 0.45); padding: 2px 8px; border-radius: 6px; transition: opacity 0.5s; }
+#banner {
+  position: fixed; top: 33%; left: 0; right: 0; text-align: center; font-size: 44px; font-weight: bold;
+  color: var(--gold); text-shadow: 0 3px 0 rgba(0, 0, 0, 0.5); pointer-events: none;
+}
+
+#panel {
+  position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: min(420px, calc(100% - 32px)); max-height: calc(100% - 32px); overflow: auto;
+  background: var(--card); border: 2px solid var(--line); border-radius: 16px; padding: 20px;
+  display: flex; flex-direction: column; gap: 12px; text-align: center;
+}
+#panel[hidden] { display: none; }
+#panel h1 { margin: 0; font-size: 28px; color: var(--gold); }
+#panel h2 { margin: 0; font-size: 20px; }
+#panel p { margin: 0; color: var(--muted); }
+#panel ul { list-style: none; margin: 0; padding: 0; text-align: left; }
+#panel li { padding: 6px 10px; border-bottom: 1px solid var(--line); }
+#panel li:last-child { border-bottom: 0; }
+.row { display: flex; gap: 8px; }
+.row > * { flex: 1; }
+.code { font-size: 32px; letter-spacing: 6px; color: var(--gold); }
+button, input {
+  font: inherit; font-size: 17px; border-radius: 10px; padding: 12px; min-height: 48px;
+  border: 2px solid var(--line); background: var(--bg); color: var(--text);
+}
+button { cursor: pointer; }
+button.main { background: var(--gold); border-color: var(--gold); color: #2a1d05; font-weight: bold; }
+input { text-transform: uppercase; text-align: center; letter-spacing: 4px; min-width: 0; }

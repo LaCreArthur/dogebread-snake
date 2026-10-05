@@ -1,0 +1,15 @@
+{
+  // Browser side (client + shared game code + tests). The Worker has its own: src/server/tsconfig.json
+  "compilerOptions": {
+    "target": "es2023",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "lib": ["es2023", "dom"],
+    "types": ["vite/client"],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "verbatimModuleSyntax": true
+  },
+  "include": ["src/client", "src/game", "tests"]
+}

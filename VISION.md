@@ -1,56 +1,36 @@
-# Vision — DogeBread Snake
+# Vision: DogeBread Snake
 
 ## Goal
-A polished, juicy snake battle royale playable in-browser that feels like a real game, not a tech demo. 10 snakes, satisfying feedback on every action, Doge-themed.
+10 real humans in one match. Free browser snake battle royale for Dogecoin fans, desktop + mobile, no
+install: share a link, friends are in the same match seconds later. 10 snakes, ~3 min, arena shrinks,
+last Doge alive wins. Bots fill every empty seat, so a match is fun with 1 human or 10.
 
-## Priorities (ordered)
+## Stages (agreed 2026-10-05)
+1. **Rebuild + room links** (current). TypeScript rebuild; private link rooms, host starts, bots fill.
+   Switch-over (delete the Rust/Bevy game) the day two humans can play one room; port effects after.
+   Done when: deployed on Cloudflare free plan; 10 people play one match from one shared link.
+2. **Public arena** (replaces a matchmaking queue): one public room loops matches back to back;
+   newcomers spectate and join the next round; a second arena opens only when the first is full.
+3. **Paid rooms** (optional, needs only stage 1): 1 DOGE entry, last paying snake alive takes the pot,
+   Dogecoin L1, link rooms among friends only, testnet first. Design in STATE.md.
 
-### P0: Must Have (ship-blocking)
-- [x] Core snake mechanics (move, eat, grow, die)
-- [x] Battle royale (arena shrink, last alive wins)
-- [x] Multiple AI opponents with personality
-- [x] Game state flow (start → play → game over → restart)
-- [x] Scoring + kill tracking
-- [x] Minimap
-- [x] Camera follow player
-- [x] Bigger map — 60x60 grid, 12px cells, 900x780 window
-- [x] Juice: screen shake on death/kill
-- [x] Juice: score popup when eating food (+1 floating text)
-- [x] Juice: food pulsing/glowing animation
-- [x] Juice: death explosion (particles or expanding ring)
-- [x] Juice: arena shrink warning (flash/shake before shrink)
-- [x] Juice: speed lines or visual indicator when speed increases
-- [x] Snake head distinct from body (eyes, shape, or size difference)
-- [x] Kill feed (top-right, "Red killed Blue", fades out)
-- [x] Countdown (3-2-1-GO) before match starts
-- [x] Fix entity despawned warnings (race condition in cleanup)
+Growth (Arthur's side): one weekly fixed match time in a Telegram group he owns; 10 named RSVPs for the
+first date; stage 1 is built for that date.
 
-### P1: Should Have
-- [x] 10 snakes (Sprint 5)
-- [ ] Sound effects (eat, die, kill, arena shrink, countdown)
-- [ ] Player name entry before match
-- [x] Better game over screen — phased reveal, colored rankings, crown (Sprint 6)
-- [x] Camera zoom out slightly as arena shrinks (Sprint 5)
-- [x] Smooth camera — delta-time exponential smoothing (Sprint 5)
-- [x] Trail/afterimage effect on fast snakes (Sprint 7)
-- [x] WASM build verified + build script (Sprint 8) + GitHub Pages live (Sprint 11)
-
-### P2: Nice to Have
-- [x] Full menu flow: Home → Play → Game → Leaderboard → Home (Sprint 16)
-- [ ] Doge sprites/assets (actual Doge head, coin pickups)
-- [x] Screen shake intensity scales with kills (Sprint 9)
-- [x] Spectate: auto-follow strongest remaining snake (Sprint 9)
-- [ ] Match stats history (local storage in WASM)
-- [ ] Mobile touch controls (WASM)
+## Architecture (decided 2026-10-05)
+- TypeScript everywhere. Engine-free rules module runs only on the server and in tests.
+- Client: Canvas 2D arena, HTML overlay UI, Web Audio. Target < 300 KB, playable 1-2 s after a link
+  tap, must work in Telegram's in-app browser.
+- Server: Cloudflare Workers + one Durable Object per room (SQLite-backed, free plan); static assets on
+  the same Worker.
+- Network: server owns rules, randomness and bots; each step it broadcasts outcomes (new heads +
+  lengths, deaths, food); clients only draw. Snapshot on join. No client prediction: a queued-turn
+  arrow on the player's head gives instant feedback. The stream is the replay.
+- Names: generated Doge names (word lists, reroll), never free text.
+- Abuse limits: server-issued room codes only, rooms run only while a human is connected, idle rooms
+  close, per-socket message cap.
 
 ## Constraints
-- Rust + Bevy 0.18 (no engine switch)
-- No external asset files yet (procedural/code-generated visuals only)
-- Single-player only (multiplayer is Phase 3, out of scope)
-- Build must compile and run natively + WASM
-- Auto-screenshot system must keep working for AI verification
-
-## Stop Conditions
-- All P0 items complete
-- 3 consecutive sprint failures
-- User says stop
+- Free hosting only (Cloudflare free plan: 100k req/day, 13,000 GB-s/day DO duration).
+- Fun non-commercial POC. No ads, no accounts.
+- Not a Sorolla/TinyForge game: the studio standard (iOS, paid UA, ads) does not apply.
