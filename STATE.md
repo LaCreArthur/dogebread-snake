@@ -15,6 +15,9 @@ Branch: ts-rebuild (master keeps the Rust game until switch-over).
   assumption: grid, rules, balance"; his concept art: dogebread.io, free-angle doge-head + bread-slice
   body, food skins: garlic bread, baguette, taco, hot dog). Specialist design pass -> roadmap attack ->
   AskUserQuestion. Nothing built until he picks.
+- Cycle 3 done: sounds ported (mute button); dev `?lag=MS` simulates a round trip (half each way,
+  HUD shows it) so Arthur can feel grid controls at deployed latency before the grid-vs-steering pick.
+  Measured: lag=200 -> own turn visible after 232 ms.
 
 ## Measured (bot-only, 200 seeds, Rust brain)
 - Match length median 50 s, p90 71 s, max 121 s; arena never below 38 wide, so the shrink rarely

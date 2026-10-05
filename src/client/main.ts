@@ -17,6 +17,10 @@ const canvas = $("game") as HTMLCanvasElement;
 const mute = $("mute");
 const draw = createRenderer(canvas);
 const CODE = /^[2-9A-HJKMNP-Z]{5}$/;
+// dev: ?lag=MS adds MS of round trip (half each way), to feel a deployed room on localhost
+const lag = import.meta.env.DEV ? Number(new URLSearchParams(location.search).get("lag")) || 0 : 0;
+const delayed = (f: () => void) => (lag ? void setTimeout(f, lag / 2) : f());
+const withLag = (url: string) => (lag ? `${url}${url.includes("?") ? "&" : "?"}lag=${lag}` : url);
 
 // storage can throw (private mode, blocked site data): treat that as empty
 const load = (s: () => Storage, k: string) => {
@@ -45,7 +49,7 @@ let retries = 0;
 // ---- connection
 
 function enter(code: string) {
-  history.replaceState(null, "", `?r=${code}`);
+  history.replaceState(null, "", withLag(`?r=${code}`));
   r = newReplica();
   retries = 0;
   panel.hidden = false;
@@ -57,7 +61,7 @@ function connect(code: string) {
   const sock = new WebSocket(wsUrl(code, token, savedName()));
   ws = sock;
   sock.onopen = () => (retries = 0);
-  sock.onmessage = (e) => onMessage(JSON.parse(e.data));
+  sock.onmessage = (e) => delayed(() => onMessage(JSON.parse(e.data)));
   sock.onclose = (e) => {
     if (ws !== sock) return;
     ws = null;
@@ -69,7 +73,10 @@ function connect(code: string) {
   };
 }
 
-const send = (msg: ClientMsg) => ws?.readyState === WebSocket.OPEN && ws.send(JSON.stringify(msg));
+function send(msg: ClientMsg) {
+  const sock = ws;
+  delayed(() => sock?.readyState === WebSocket.OPEN && sock.send(JSON.stringify(msg)));
+}
 
 function onMessage(msg: ServerMsg) {
   const now = performance.now();
@@ -164,7 +171,7 @@ function home(error = "") {
   ws?.close();
   ws = null;
   r = newReplica();
-  history.replaceState(null, "", "/");
+  history.replaceState(null, "", withLag("/"));
   const input = h("input", { maxLength: 5, placeholder: "CODE", autocomplete: "off" });
   const join = h("form", { className: "row" }, input, h("button", { textContent: "Join" }));
   join.onsubmit = (e) => {
@@ -240,7 +247,8 @@ function updateHud() {
   const me = r.seat >= 0 ? m.snakes[r.seat] : undefined;
   hud.innerHTML = `<span>alive <b>${alive}/${m.snakes.length}</b></span>` +
     `<span><b>${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}</b></span>` +
-    (me ? `<span>coins <b>${me.score}</b></span><span>bonks <b>${me.kills}</b></span>` : "<span>watching</span>");
+    (me ? `<span>coins <b>${me.score}</b></span><span>bonks <b>${me.kills}</b></span>` : "<span>watching</span>") +
+    (lag ? `<span>lag <b>${lag}</b></span>` : "");
 }
 
 function addFeed(text: string, color: string) {
