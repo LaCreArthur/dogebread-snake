@@ -1,11 +1,12 @@
 // Browser entry: home screen, room connection, lobby panel, HUD and input. All match state comes
 // from the server through the replica; this file only shows it and sends turns.
 import "./style.css";
-import { opposite, SEATS, type Dir } from "../game/rules";
+import { opposite, SEATS, shrinkWarning, type Dir } from "../game/rules";
 import { validName, type ClientMsg, type NameIdx, type ServerMsg } from "../game/protocol";
 import { apply, newReplica, type Replica } from "../game/replica";
 import { createRenderer, snakeColor, type Overlay } from "./render";
 import { wsUrl } from "./net";
+import { isMuted, play, toggleMute } from "./sound";
 
 const $ = (id: string) => document.getElementById(id)!;
 const hud = $("hud");
@@ -13,6 +14,7 @@ const feed = $("feed");
 const banner = $("banner");
 const panel = $("panel");
 const canvas = $("game") as HTMLCanvasElement;
+const mute = $("mute");
 const draw = createRenderer(canvas);
 const CODE = /^[2-9A-HJKMNP-Z]{5}$/;
 
@@ -71,6 +73,7 @@ const send = (msg: ClientMsg) => ws?.readyState === WebSocket.OPEN && ws.send(JS
 
 function onMessage(msg: ServerMsg) {
   const now = performance.now();
+  const warned = r.m !== null && shrinkWarning(r.m);
   if (msg.t === "snap") {
     countdownEnd = msg.countdownMs ? now + msg.countdownMs : -Infinity;
     overlay.deathAt.clear();
@@ -87,7 +90,13 @@ function onMessage(msg: ServerMsg) {
       addFeed(text, snakeColor(id));
       if (id === r.seat) showBanner("wow. such ded.", 2500);
     }
-    if (msg.spedUp) showBanner("much fast! wow!", 1500);
+    if (msg.deaths.length) play("death");
+    if (msg.eaten.some(([id]) => id === r.seat)) play("eat");
+    if (msg.shrunk) play("shrinkImpact");
+    if (msg.spedUp) {
+      showBanner("much fast! wow!", 1500);
+      play("speedUp");
+    }
   }
 
   apply(r, msg);
@@ -96,10 +105,12 @@ function onMessage(msg: ServerMsg) {
     save(() => localStorage, "dbs-name", msg.name.join("."));
     renderPanel();
   } else if (msg.t === "over") {
+    play("gameOver");
     renderPanel();
-  } else if (msg.t === "step" && overlay.pending !== -1) {
+  } else if (msg.t === "step") {
+    if (!warned && shrinkWarning(r.m!)) play("shrinkWarning");
     const me = r.m?.snakes[r.seat];
-    if (!me?.alive || me.dir === overlay.pending || msg.tick >= pendingTick + 2) overlay.pending = -1;
+    if (overlay.pending !== -1 && (!me?.alive || me.dir === overlay.pending || msg.tick >= pendingTick + 2)) overlay.pending = -1;
   }
   updateHud();
 }
@@ -251,7 +262,11 @@ function frame(now: number) {
   const left = countdownEnd - now;
   const text = left > 2500 ? "such 3" : left > 1500 ? "very 2" : left > 500 ? "much 1" : left > -500 ? "WOW GO!"
     : now < bannerUntil ? bannerText : "";
-  if (banner.textContent !== text) banner.textContent = text;
+  if (banner.textContent !== text) {
+    if (["such 3", "very 2", "much 1"].includes(text)) play("beep");
+    else if (text === "WOW GO!") play("go");
+    banner.textContent = text;
+  }
   requestAnimationFrame(frame);
 }
 
@@ -267,6 +282,13 @@ function devButtons() {
     onclick: async () => ais.push((await import("./aiPlayer")).addAiPlayer(r.code)),
   })];
 }
+
+const showMute = () => (mute.textContent = isMuted() ? "🔇" : "🔊");
+mute.onclick = () => {
+  toggleMute();
+  showMute();
+};
+showMute();
 
 const asked = new URLSearchParams(location.search).get("r")?.toUpperCase() ?? "";
 if (CODE.test(asked)) enter(asked);

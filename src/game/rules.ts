@@ -28,6 +28,9 @@ export const cy = (c: number) => Math.floor(c / W);
 export type Bounds = [number, number, number, number];
 export const inside = (b: Bounds, c: number) => cx(c) >= b[0] && cx(c) < b[2] && cy(c) >= b[1] && cy(c) < b[3];
 export const canShrink = (b: Bounds) => b[2] - b[0] > MIN_ARENA && b[3] - b[1] > MIN_ARENA;
+/** True during the warning before the next shrink. */
+export const shrinkWarning = (m: { timeMs: number; bounds: Bounds }) =>
+  canShrink(m.bounds) && SHRINK_EVERY_MS - (m.timeMs % SHRINK_EVERY_MS) <= SHRINK_WARN_MS;
 
 export type Death = "bonk" | "ded" | "crushed";
 

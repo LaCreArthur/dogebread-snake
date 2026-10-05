@@ -1,7 +1,7 @@
 // Canvas drawing. Cells are at least MIN_CELL px (the Rust game used 12): where the arena fits the
 // screen it is framed whole, otherwise the camera follows my snake (or the leader once I am out).
 // Grid +y is up; screen y is down.
-import { canShrink, cx, cy, DX, DY, H, SHRINK_EVERY_MS, SHRINK_WARN_MS, W, type Dir } from "../game/rules";
+import { cx, cy, DX, DY, H, shrinkWarning, W, type Dir } from "../game/rules";
 import type { Replica } from "../game/replica";
 
 const BG = "#1a1a2e";
@@ -98,8 +98,7 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     }
 
     // the ring that is about to become wall flashes red
-    const untilShrink = SHRINK_EVERY_MS - (m.timeMs % SHRINK_EVERY_MS);
-    if (r.phase === "playing" && !m.over && canShrink(m.bounds) && untilShrink <= SHRINK_WARN_MS) {
+    if (r.phase === "playing" && !m.over && shrinkWarning(m)) {
       ctx.fillStyle = `rgba(255,70,70,${0.3 + 0.2 * Math.sin(now / 70)})`;
       const w = (bx1 - bx0) * cs;
       const h = (by1 - by0) * cs;
