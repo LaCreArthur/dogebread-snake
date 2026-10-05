@@ -14,7 +14,7 @@ Branch: ts-rebuild (master keeps the Rust game until switch-over).
 - Cycle 2: design proposal for Arthur ("current version is weak, 10x more fun/addictive, question every
   assumption: grid, rules, balance"; his concept art: dogebread.io, free-angle doge-head + bread-slice
   body, food skins: garlic bread, baguette, taco, hot dog). Specialist design pass -> roadmap attack ->
-  AskUserQuestion. Nothing built until he picks.
+  AskUserQuestion. Arthur picked 2026-10-05 (see "Arthur's picks" below).
 - Cycle 3 done: sounds ported (mute button); dev `?lag=MS` simulates a round trip (half each way,
   HUD shows it) so Arthur can feel grid controls at deployed latency before the grid-vs-steering pick.
   Measured: lag=200 -> own turn visible after 232 ms.
@@ -22,16 +22,25 @@ Branch: ts-rebuild (master keeps the Rust game until switch-over).
   blink), screen shake (my death 14 px, my bonk 7; nearby deaths and shrink cut after the attack), gold sparkle
   on every coin eaten, "+1" pop on my coins, "+1 bonk" pop + "much bonk! wow" banner + new procedural
   "bonk" sound on my kills, camera holds 1.2 s on my crumbs before following the leader, my own name
-  label removed (it covered my pops; the ring marks me). Replay: .playwright-mcp/juice-replay.js
-  (browser_run_code_unsafe with filename; eats a coin, dies on a wall, returns console errors).
+  label removed (it covered my pops; the ring marks me).
+- Cycle 5 done (Arthur's picks: free steering, last snake alive, boop): grid replaced by the
+  free-steering core (rules reference below), bots, mouse/touch/keys, renderer (round strokes + slice
+  lines, doge head, heads glide between ticks, red closing wall, coin sprite = golden crumb). Juice
+  ported: death burst along the body, my-death/my-bonk shake + banners, sparkle on eaten crumbs, "+5"
+  pop on my golden crumbs only, "boop!" pop (+ new boop sound and 4 px shake when mine), "much wall!
+  wow" + warning sound when the wall starts closing. Deleted: grid rules, speed-up, shrink steps,
+  queued-turn arrow, speedUp + shrinkImpact sounds, "+1" pops on plain crumbs. typecheck, 7 vitest
+  tests, build pass (16.1 kB JS, 7.4 kB gzip). Replay .playwright-mcp/steer-replay.js
+  (browser_run_code_unsafe with filename) at 390x844 with the touch stick: ate, died on the wall;
+  then watched to the end (bot won at 1:31, results panel), no console errors.
+  Open (polish): the results panel covers the winner, so the end has no victory moment; snakes read
+  small on a phone (~10 px wide) - Arthur's playtest judges.
 
-## Measured (bot-only, 200 seeds, Rust brain)
-- Match length median 50 s, p90 71 s, max 121 s; arena never below 38 wide, so the shrink rarely
-  matters. 776 bot deaths in the first 5 s (766 head-on: symmetric spawns + no head-on check).
-- Head-on avoidance (penalize cells another head can enter) + dead-end fallback: 120 early deaths,
-  median 64 s. Reverted 2026-10-05: design change, waits for Arthur.
+## Measured (bot-only, 100 seeds, free steering, 2026-10-05; grid numbers in git at 400a8da)
+- Round length p10 75 s, median 95 s, p90 108 s, max 111 s (target 60-120 s, max 2:30). Deaths: 96%
+  bonks, 4% wall; 10% of deaths by 18 s, median death 52 s. ~10 boops/round, 0 draws, longest 291 len.
 
-## Design proposal v1 (specialist pass 2026-10-05; PENDING Arthur, nothing built)
+## Design proposal v1 (specialist pass 2026-10-05; Arthur picked, see "Arthur's picks")
 u = new-snake width. Bots obey all human rules.
 - Hook: the cut-off (boost across a nose, victim bursts into crumbs). Any size kills any size.
 - Move: constant 8 u/s, boost 16 u/s; turn 240 deg/s / width (circle ~4 widths), x2 while boosting.
@@ -113,23 +122,51 @@ u = new-snake width. Bots obey all human rules.
   titles, bests, onboarding, bot tiers, revenge, most juice, public arena. Pass/fail: cut-off share;
   deaths called fair at 300 ms; leader at 2:00 wins <50%; friends start a 3rd round.
 
-## Rules reference (ported from the Rust game, client/src + shared/src)
-- Grid 60x60, walls at 0 and 59, playable 1..58. 10 snakes, 35 food, initial length 5.
-- Step 125 ms; every 20 s step interval x0.85 (min 60 ms). Arena shrinks 1 cell per side every 12 s
-  until inner size <= 6; warning 2 s before.
-- Step: all alive snakes move (queued dir, no 180), then collisions vs post-move state: out of arena,
-  self body, other alive body (killer +1 kill), head-to-head (both die, no killer). Food on head:
-  +2 growth, +1 score. Refill food to 35 inside bounds (min+1..max-2). After shrink, heads outside die
-  ("crushed"), food outside removed. Over when alive <= 1.
-- Bots: Hungry/Cautious/Aggressive by id%3; 1-step safety + 2-step exit check; score = food pull,
-  wall distance, head attraction/repulsion, +3 keep direction.
-- Spawns: 10 fixed positions + directions (see src/game/rules.ts).
-- Text: "such 3 / very 2 / much 1 / WOW GO!", "X bonked by Y! wow", "X ded! much rip!",
-  "X crushed! such squish!".
+### Arthur's picks 2026-10-05 and v3 = v2 adapted to them
+- Picks (AskUserQuestion): movement = free steering (grid replaced; test version first: one room of
+  6-8 snakes, one bot type, a lag setting); round = last snake alive (no respawn, the arena shrinks,
+  dead players watch; he rejected 3:00 rounds with respawn); head-on = boop (both bounce, lose a few
+  slices, nobody dies).
+- v3 deltas: no respawn, ghost, crown, auto rematch or win tally; the host starts the next round;
+  bots can win. Spawn ring at 0.6 r0 heading clockwise. Wall holds 20 s, closes to 8 u by 1:50, to 0
+  by 2:20; a simultaneous last death is a draw. All length drops on death (the "above 40" clause
+  existed only for respawn). Self-overlap burn dropped: the closing wall is the anti-turtle. Crumbs
+  outside the wall vanish; no spawning once it closes. Min 8 snakes, max 10 humans, r0 =
+  75*sqrt(n/12). Metrics: cut-off share; deaths fair at 300 ms; round median 60-120 s, max 2:30;
+  friends start a 3rd round.
+- Build order: 5 core (done) -> 6 boost (2% len/s, min 4/s, half dropped, owner can't eat own drops,
+  none below 20) + cut-off tagging -> 7 own-snake prediction, others projected, lag 0/150/300 ->
+  8 tuning from Arthur's playtest.
+
+## Rules reference (free steering, src/game/rules.ts; the grid rules are in git at 400a8da)
+- u = new-snake width, +y up, 20 Hz ticks. Speed 8 u/s; turn 240 deg/s / width toward the target
+  heading. Body = trail of head positions (1 per tick, 0.01 u), resampled every 0.5 u into
+  ceil(len/4) slices; width 1 + (len-40)/400, cap 2.5. Start len 40, min 20.
+- Contacts on post-move bodies, contact = (wa+wb)/2*0.8: head on another snake's slice >= 3 -> death,
+  owner gets the kill + len/4; slices 0-2 -> boop: heads pushed apart, faced apart, both -8 len.
+  Own body harmless. |head| + w/2*0.8 > wall -> death. Death drops floor(len/2/5) golden crumbs
+  (5 len) along the body; the rest is lost.
+- Crumbs: 400 per pi*75^2 kept full until 20 s; eaten within w/2 + 2 u of the head (lower id wins a
+  tie); removed outside the wall.
+- Arena: n = max(8, humans), r0 = 75*sqrt(n/12). Over when <= 1 alive (0 = draw). Ranking: alive,
+  later death, kills, len, id.
+- Bots (and dev AI players): every 6 ticks, best of 16 headings within +-162 deg: clear distance
+  (1 u probes to 10 u) x10 + toward the nearest plain crumb x4 + keep x2 + center x6*edge^2; +-10 deg
+  error.
+- Wire: step {tick, timeMs, wall, moved [id,x,y,a,ta,len], deaths [id,killer,how], boops [a,b],
+  eaten [crumb,id], spawned [crumb,x,y,v]}; client {t:"steer", a} <= 10/s, first change at once,
+  skip < 0.03 rad.
+- Client: camera on my head (1.2 s on my crumbs after death, then the longest); zoom
+  sqrt(screen px^2/3500)/(1 + 0.3(w-1)); heads glide along their heading between ticks. Touch stick
+  (12 px dead zone, anchor follows past 60 px, outranks the mouse); mouse = angle from screen center;
+  arrows/WASD = 8 directions on keydown.
+- Text: "such 3 / very 2 / much 1 / WOW GO!", "X bonked by Y! wow", "X squished! such wall!",
+  "wow. such ded.", "much bonk! wow", "much wall! wow", "boop!".
 
 ## Decisions
-- 2026-10-05 Stage plan, stack, public arena instead of queue, no prediction, generated names,
-  L1 for paid rooms: see VISION.md.
+- 2026-10-05 Stage plan, stack, public arena instead of queue, generated names, L1 for paid rooms:
+  see VISION.md. Own-snake prediction is planned for cycle 7 (was "no prediction" for the grid).
+- 2026-10-05 Arthur's picks: free steering, last snake alive, boop (see "Arthur's picks").
 - 2026-10-05 Not started with `tinyforge create`: TinyForge's standard is for Sorolla iOS paid-UA
   games; this is a solo multiplayer web POC.
 - 2026-10-05 Non-hibernating WebSockets (`server.accept()`): simplest; idle rooms close to protect the
@@ -153,3 +190,5 @@ unifralabs DogecoinTestnetWallet. MyDoge extension API: connect, requestTransact
   associated with the config". Tests use their own vitest.config.ts.
 - 2026-10-05 Playwright MCP refuses screenshot and code files outside the project ("outside allowed
   roots"): keep replay scripts and captures in .playwright-mcp/ (gitignored), not the scratchpad.
+- 2026-10-05 The Playwright MCP browser gets real OS mouse moves (trusted "mouse" pointermoves) that
+  steered against the replay's touch input. Before blaming input code, log pointerType + isTrusted.

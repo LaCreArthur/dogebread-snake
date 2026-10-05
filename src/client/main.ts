@@ -1,10 +1,10 @@
 // Browser entry: home screen, room connection, lobby panel, HUD and input. All match state comes
-// from the server through the replica; this file only shows it and sends turns.
+// from the server through the replica; this file only shows it and sends my heading.
 import "./style.css";
-import { opposite, SEATS, shrinkWarning, type Dir } from "../game/rules";
+import { head, SEATS, WALL_HOLD_MS, wrap } from "../game/rules";
 import { validName, type ClientMsg, type NameIdx, type ServerMsg, type StepMsg } from "../game/protocol";
 import { apply, newReplica, type Replica } from "../game/replica";
-import { createRenderer, snakeColor } from "./render";
+import { createRenderer, snakeColor, STICK_PX, type Input } from "./render";
 import { wsUrl } from "./net";
 import { isMuted, play, toggleMute } from "./sound";
 
@@ -38,8 +38,11 @@ const savedName = (): NameIdx | null => {
 };
 
 let r: Replica = newReplica();
-let pending: Dir | -1 = -1; // my turn, sent but not applied yet
-let pendingTick = 0;
+const input: Input = { steer: null, stick: null };
+let sent: number | null = null; // the last heading sent
+let sentAt = -Infinity;
+let steerTimer = 0;
+let lastStepAt = 0;
 let countdownEnd = -Infinity;
 let bannerText = "";
 let bannerUntil = 0;
@@ -80,12 +83,14 @@ function send(msg: ClientMsg) {
 
 function onMessage(msg: ServerMsg) {
   const now = performance.now();
-  const warned = r.m !== null && shrinkWarning(r.m);
+  const before = r.m?.timeMs ?? 0;
   if (msg.t === "snap") {
     countdownEnd = msg.countdownMs ? now + msg.countdownMs : -Infinity;
-    pending = -1;
+    input.steer = sent = null;
     feed.replaceChildren();
     bannerUntil = 0;
+  } else if (msg.t === "step" && r.m) {
+    onEat(msg);
   }
 
   apply(r, msg);
@@ -97,83 +102,142 @@ function onMessage(msg: ServerMsg) {
     play("gameOver");
     renderPanel();
   } else if (msg.t === "step" && r.m) {
-    onStep(msg, warned);
+    lastStepAt = now;
+    onStep(msg, before);
   }
   updateHud();
 }
 
-// feedback for what just happened; runs on the updated replica, so dead bodies include the fatal cell
-function onStep(msg: StepMsg, warned: boolean) {
+// eaten crumbs sparkle where they were, so this runs before the step removes them
+function onEat(msg: StepMsg) {
+  if (!msg.eaten.length) return;
+  const eaten = new Map(msg.eaten);
+  let mine = false;
+  for (const c of r.m!.crumbs) {
+    const id = eaten.get(c.id);
+    if (id === undefined) continue;
+    view.sparkle(c.x, c.y);
+    if (id !== r.seat) continue;
+    mine = true;
+    if (c.v > 1) view.pop(c.x, c.y, `+${c.v}`, "#e8b04a");
+  }
+  if (mine) play("eat");
+}
+
+// feedback for what just happened; runs on the updated replica, so dead bodies include the fatal move
+function onStep(msg: StepMsg, before: number) {
   const m = r.m!;
-  const me = r.seat >= 0 ? m.snakes[r.seat] : undefined;
   for (const [id, killer, how] of msg.deaths) {
     const s = m.snakes[id];
-    const text = how === "crushed" ? `${s.name} crushed! such squish!`
-      : killer >= 0 ? `${s.name} bonked by ${m.snakes[killer].name}! wow`
-      : `${s.name} ded! much rip!`;
-    addFeed(text, snakeColor(id));
-    view.burst(s.body, snakeColor(id));
+    addFeed(how === "wall" ? `${s.name} squished! such wall!` : `${s.name} bonked by ${m.snakes[killer].name}! wow`, snakeColor(id));
+    view.burst(s, snakeColor(id));
     if (id === r.seat) {
       showBanner("wow. such ded.", 2500);
       view.shake(14);
     } else if (killer >= 0 && killer === r.seat) {
+      const [x, y] = head(s);
       showBanner("much bonk! wow", 1200);
-      view.pop(s.body[0], "+1 bonk", "#fff");
+      view.pop(x, y, "+1 bonk", "#fff");
       view.shake(7);
       play("bonk");
     }
   }
   if (msg.deaths.length) play("death");
-  for (const [id, c] of msg.eaten) {
-    view.sparkle(c);
-    if (id !== r.seat) continue;
-    view.pop(c, "+1", "#e8b04a");
-    play("eat");
+  for (const [a, b] of msg.boops) {
+    const [ax, ay] = head(m.snakes[a]);
+    const [bx, by] = head(m.snakes[b]);
+    view.pop((ax + bx) / 2, (ay + by) / 2, "boop!", "#fff");
+    if (a !== r.seat && b !== r.seat) continue;
+    view.shake(4);
+    play("boop");
   }
-  if (msg.shrunk) play("shrinkImpact");
-  if (msg.spedUp) {
-    showBanner("much fast! wow!", 1500);
-    play("speedUp");
+  if (before < WALL_HOLD_MS && m.timeMs >= WALL_HOLD_MS) {
+    showBanner("much wall! wow", 1500);
+    play("shrinkWarning");
   }
-  if (!warned && shrinkWarning(m)) play("shrinkWarning");
-  if (pending !== -1 && (!me?.alive || me.dir === pending || msg.tick >= pendingTick + 2)) pending = -1;
 }
 
-// ---- input
+// ---- input: my snake turns toward a heading at any angle; at most 10 headings a second go out
 
-function sendTurn(d: Dir) {
+function steerTo(a: number) {
+  input.steer = a;
+  flushSteer();
+}
+
+function flushSteer() {
   const me = r.m && r.seat >= 0 ? r.m.snakes[r.seat] : undefined;
-  if (!me?.alive || (r.phase !== "playing" && r.phase !== "countdown")) return;
-  if (d === opposite(me.dir) || d === (pending === -1 ? me.dir : pending)) return;
-  send({ t: "turn", d });
-  pending = d;
-  pendingTick = r.m!.tick;
+  const a = input.steer;
+  if (a === null || !me?.alive || (r.phase !== "playing" && r.phase !== "countdown")) return;
+  if (sent !== null && Math.abs(wrap(a - sent)) < 0.03) return;
+  const wait = sentAt + 100 - performance.now();
+  if (wait > 0) {
+    steerTimer ||= window.setTimeout(() => {
+      steerTimer = 0;
+      flushSteer();
+    }, wait);
+    return;
+  }
+  send({ t: "steer", a: Math.round(a * 1000) / 1000 });
+  sent = a;
+  sentAt = performance.now();
 }
 
-const KEYS: Record<string, Dir> = {
-  ArrowUp: 0, KeyW: 0, ArrowRight: 1, KeyD: 1, ArrowDown: 2, KeyS: 2, ArrowLeft: 3, KeyA: 3,
-};
-addEventListener("keydown", (e) => {
-  const d = KEYS[e.code];
-  if (d === undefined || e.target instanceof HTMLInputElement) return;
-  e.preventDefault();
-  sendTurn(d);
+// mouse: the snake heads toward the pointer. Touch: a stick appears under the thumb, the drag
+// direction steers, and the stick follows a long drag so reversing stays one short move. A thumb
+// on the stick outranks a mouse resting on the same screen.
+canvas.addEventListener("pointerdown", (e) => {
+  if (e.pointerType !== "mouse" && !input.stick) {
+    input.stick = { id: e.pointerId, ax: e.clientX, ay: e.clientY, x: e.clientX, y: e.clientY };
+  }
 });
+canvas.addEventListener("pointermove", (e) => {
+  if (e.pointerType === "mouse") {
+    if (input.stick) return;
+    const dx = e.clientX - innerWidth / 2;
+    const dy = e.clientY - innerHeight / 2;
+    if (dx * dx + dy * dy > 100) steerTo(Math.atan2(-dy, dx));
+    return;
+  }
+  const st = input.stick;
+  if (st?.id !== e.pointerId) return;
+  const dx = e.clientX - st.ax;
+  const dy = e.clientY - st.ay;
+  const d = Math.hypot(dx, dy);
+  if (d > STICK_PX) {
+    st.ax = e.clientX - (dx / d) * STICK_PX;
+    st.ay = e.clientY - (dy / d) * STICK_PX;
+  }
+  st.x = e.clientX;
+  st.y = e.clientY;
+  if (d > 12) steerTo(Math.atan2(-dy, dx));
+});
+const lift = (e: PointerEvent) => {
+  if (input.stick?.id === e.pointerId) input.stick = null;
+};
+canvas.addEventListener("pointerup", lift);
+canvas.addEventListener("pointercancel", lift);
 
-// a swipe turns as soon as the finger has moved 30px; one touch can chain several turns
-let touch: { x: number; y: number } | null = null;
-canvas.addEventListener("touchstart", (e) => {
-  touch = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-}, { passive: true });
-canvas.addEventListener("touchmove", (e) => {
-  const t = e.touches[0];
-  if (!touch) return;
-  const dx = t.clientX - touch.x;
-  const dy = t.clientY - touch.y;
-  if (Math.max(Math.abs(dx), Math.abs(dy)) < 30) return;
-  sendTurn(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 1 : 3) : dy > 0 ? 2 : 0);
-  touch = { x: t.clientX, y: t.clientY };
-}, { passive: true });
+// keys: arrows or WASD point the snake; two pressed together point it diagonally
+const KEYS: Record<string, [number, number]> = {
+  ArrowUp: [0, 1], KeyW: [0, 1], ArrowDown: [0, -1], KeyS: [0, -1],
+  ArrowLeft: [-1, 0], KeyA: [-1, 0], ArrowRight: [1, 0], KeyD: [1, 0],
+};
+const held = new Set<string>();
+addEventListener("keydown", (e) => {
+  if (!KEYS[e.code] || e.target instanceof HTMLInputElement) return;
+  e.preventDefault();
+  held.add(e.code);
+  if (e.repeat) return;
+  let x = 0;
+  let y = 0;
+  for (const k of held) {
+    x += KEYS[k][0];
+    y += KEYS[k][1];
+  }
+  if (x || y) steerTo(Math.atan2(y, x));
+});
+addEventListener("keyup", (e) => held.delete(e.code));
+addEventListener("blur", () => held.clear());
 
 // ---- screens
 
@@ -199,7 +263,8 @@ function home(error = "") {
   panel.hidden = false;
   panel.replaceChildren(
     h("h1", { textContent: "DogeBread Snake" }),
-    h("p", { textContent: "10 snakes, one shrinking arena. Last snake alive wins. Bots fill the empty seats." }),
+    h("p", { textContent: "Up to 10 players in one shrinking arena. Last snake alive wins. Bots fill the empty seats." }),
+    h("p", { textContent: "Steer with the mouse, a thumb drag, or the arrow keys." }),
     h("button", { className: "main", textContent: "Create room", onclick: createRoom }),
     join,
     ...(error ? [h("p", { textContent: error })] : []),
@@ -264,7 +329,7 @@ function updateHud() {
   const me = r.seat >= 0 ? m.snakes[r.seat] : undefined;
   hud.innerHTML = `<span>alive <b>${alive}/${m.snakes.length}</b></span>` +
     `<span><b>${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}</b></span>` +
-    (me ? `<span>coins <b>${me.score}</b></span><span>bonks <b>${me.kills}</b></span>` : "<span>watching</span>") +
+    (me ? `<span>size <b>${Math.floor(me.len)}</b></span><span>bonks <b>${me.kills}</b></span>` : "<span>watching</span>") +
     (lag ? `<span>lag <b>${lag}</b></span>` : "");
 }
 
@@ -283,7 +348,7 @@ function showBanner(text: string, ms: number) {
 }
 
 function frame(now: number) {
-  view.draw(r, pending, now);
+  view.draw(r, input, now - lastStepAt, now);
   const left = countdownEnd - now;
   const text = left > 2500 ? "such 3" : left > 1500 ? "very 2" : left > 500 ? "much 1" : left > -500 ? "WOW GO!"
     : now < bannerUntil ? bannerText : "";
@@ -298,7 +363,7 @@ function frame(now: number) {
 // ---- dev: AI players join over the network like real people (npm run dev only)
 
 const ais: Replica[] = [];
-if (import.meta.env.DEV) Object.assign(window, { __dbs: { replica: () => r, ais } });
+if (import.meta.env.DEV) Object.assign(window, { __dbs: { replica: () => r, ais, input } });
 
 function devButtons() {
   if (!import.meta.env.DEV) return [];

@@ -1,4 +1,4 @@
-import type { Bounds, Dir, Match, StepResult } from "./rules";
+import type { Match, StepResult } from "./rules";
 
 export type Phase = "lobby" | "countdown" | "playing" | "over";
 
@@ -19,9 +19,9 @@ export interface PlayerInfo {
 }
 
 /** The match as clients see it: no RNG state. */
-export type PublicMatch = Omit<Match, "rng">;
+export type PublicMatch = Omit<Match, "rng" | "nextCrumb">;
 
-export type StepMsg = { t: "step"; tick: number; timeMs: number; stepMs: number; bounds: Bounds } & StepResult;
+export type StepMsg = { t: "step"; tick: number; timeMs: number; wall: number } & StepResult;
 
 export type ServerMsg =
   | { t: "room"; code: string; phase: Phase; players: PlayerInfo[]; you: number; name: NameIdx }
@@ -29,4 +29,4 @@ export type ServerMsg =
   | StepMsg
   | { t: "over"; winner: number; rank: number[] };
 
-export type ClientMsg = { t: "turn"; d: Dir } | { t: "start" } | { t: "name" };
+export type ClientMsg = { t: "steer"; a: number } | { t: "start" } | { t: "name" };

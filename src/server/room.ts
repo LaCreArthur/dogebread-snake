@@ -2,7 +2,7 @@
 // step it broadcasts what changed. Plain (non-hibernating) WebSockets keep it in memory while
 // anyone is connected; idle rooms close so they stop using the free duration quota.
 import { DurableObject } from "cloudflare:workers";
-import { createMatch, ranking, SEATS, step, turn, type Dir, type Match } from "../game/rules";
+import { createMatch, ranking, SEATS, steer, step, TICK_MS, type Match } from "../game/rules";
 import {
   NAME_ADJ, NAME_NOUN, nameOf, validName,
   type ClientMsg, type NameIdx, type Phase, type ServerMsg,
@@ -95,8 +95,8 @@ export class Room extends DurableObject<Env> {
     } catch {
       return;
     }
-    if (msg.t === "turn" && this.match && p.seat >= 0 && [0, 1, 2, 3].includes(msg.d)) {
-      turn(this.match, p.seat, msg.d as Dir);
+    if (msg.t === "steer" && this.match && p.seat >= 0 && typeof msg.a === "number") {
+      steer(this.match, p.seat, msg.a);
     } else if (msg.t === "start" && p.id === this.host && (this.phase === "lobby" || this.phase === "over")) {
       this.start();
     } else if (msg.t === "name") {
@@ -132,18 +132,20 @@ export class Room extends DurableObject<Env> {
     }, COUNTDOWN_MS);
   }
 
+  // ticks run on a fixed schedule from the start, so timer delays do not add up
   private loop() {
     const m = this.match!;
+    const due = this.startsAt + (m.tick + 1) * TICK_MS;
     this.timer = setTimeout(() => {
       const r = step(m);
-      this.broadcast({ t: "step", tick: m.tick, timeMs: m.timeMs, stepMs: m.stepMs, bounds: m.bounds, ...r });
+      this.broadcast({ t: "step", tick: m.tick, timeMs: m.timeMs, wall: m.wall, ...r });
       if (!m.over) return this.loop();
       this.phase = "over";
       this.broadcast({ t: "over", winner: m.winner, rank: ranking(m) });
       this.players = this.players.filter((p) => p.ws);
       this.sendRoom();
       this.armIdle();
-    }, m.stepMs);
+    }, Math.max(0, due - Date.now()));
   }
 
   /** Nobody connected: stop everything so the room costs nothing. */
@@ -204,6 +206,6 @@ function trySend(ws: WebSocket, data: string) {
   }
 }
 
-function publicMatch({ rng: _, ...m }: Match) {
+function publicMatch({ rng: _, nextCrumb: __, ...m }: Match) {
   return m;
 }

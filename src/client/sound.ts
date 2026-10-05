@@ -20,11 +20,6 @@ const DEFS = {
     return (t, d) => (Math.sin(TAU * 60 * t) * 0.4 + noise() * 0.6) * (1 - t / d) ** 2 * 0.5;
   }],
   shrinkWarning: [0.5, () => (t, d) => Math.sin(TAU * (Math.floor(t * 10) % 2 ? 800 : 600) * t) * (0.8 - (0.3 * t) / d) * 0.35],
-  shrinkImpact: [0.3, () => {
-    const noise = lcg(0xcafebabe);
-    return (t, d) => (Math.sin(TAU * 80 * t) * 0.7 + noise() * 0.3) * (1 - t / d) ** 3 * 0.5;
-  }],
-  speedUp: [0.3, () => (t, d) => Math.sin(TAU * (200 + 1000 * (t / d) ** 2) * t) * (1 - (t / d) ** 2) * 0.8 * 0.4],
   beep: [0.1, () => (t, d) => Math.sin(TAU * 880 * t) * (1 - t / d) * 0.4],
   go: [0.2, () => (t, d) =>
     ((Math.sin(TAU * 523.25 * t) + Math.sin(TAU * 659.25 * t) * 0.8 + Math.sin(TAU * 783.99 * t) * 0.6) / 2.4) *
@@ -33,6 +28,8 @@ const DEFS = {
     Math.sin(TAU * (800 - (600 * t) / d) * (1 + 0.02 * Math.sin(TAU * 6 * t)) * t) * Math.sqrt(1 - t / d) * 0.45],
   // not in the Rust game: my bonk, a "boing" falling from 320 to 120 Hz
   bonk: [0.18, () => (t, d) => Math.sin(TAU * (320 * t - (100 * t * t) / d)) * (1 - t / d) ** 2 * 0.6],
+  // my boop: a short squeak rising from 500 to 900 Hz
+  boop: [0.09, () => (t, d) => Math.sin(TAU * (500 * t + (200 * t * t) / d)) * (1 - t / d) * 0.5],
 } satisfies Record<string, [seconds: number, make: () => Wave]>;
 
 export type Sound = keyof typeof DEFS;

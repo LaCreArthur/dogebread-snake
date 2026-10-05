@@ -1,6 +1,6 @@
 // A client's copy of the room, rebuilt from server messages only. Used by the browser and by the
 // test AI players, so both see exactly what a real player sees.
-import { cx, cy, inside, type Dir } from "./rules";
+import { trimTrail } from "./rules";
 import type { NameIdx, Phase, PlayerInfo, PublicMatch, ServerMsg, StepMsg } from "./protocol";
 
 export interface Replica {
@@ -38,30 +38,26 @@ export function apply(r: Replica, msg: ServerMsg) {
   }
 }
 
+// the server's order: move, deaths, eat, spawn, then the wall takes what is outside
 function applyStep(m: PublicMatch, s: StepMsg) {
   m.tick = s.tick;
   m.timeMs = s.timeMs;
-  m.stepMs = s.stepMs;
-  for (const [id, head, len] of s.moved) {
+  m.wall = s.wall;
+  for (const [id, x, y, a, ta, len] of s.moved) {
     const snake = m.snakes[id];
-    snake.dir = dirBetween(snake.body[0], head);
-    snake.body.unshift(head);
-    snake.body.length = Math.min(snake.body.length, len);
+    snake.trail.push(x, y);
+    snake.a = a;
+    snake.ta = ta;
+    snake.len = len;
   }
   for (const [id, killer] of s.deaths) {
     m.snakes[id].alive = false;
     m.snakes[id].diedTick = s.tick;
     if (killer >= 0) m.snakes[killer].kills++;
   }
-  // same as the server: a head on a cell eats every coin there
-  const eaten = new Set(s.eaten.map(([, c]) => c));
-  for (const [id] of s.eaten) m.snakes[id].score++;
-  m.bounds = s.bounds;
-  m.food = [...m.food.filter((f) => !eaten.has(f)), ...s.spawned].filter((f) => inside(m.bounds, f));
-}
-
-function dirBetween(from: number, to: number): Dir {
-  const dx = cx(to) - cx(from);
-  const dy = cy(to) - cy(from);
-  return dx > 0 ? 1 : dx < 0 ? 3 : dy > 0 ? 0 : 2;
+  const eaten = new Set(s.eaten.map(([c]) => c));
+  m.crumbs = m.crumbs.filter((c) => !eaten.has(c.id));
+  for (const [id, x, y, v] of s.spawned) m.crumbs.push({ id, x, y, v });
+  m.crumbs = m.crumbs.filter((c) => c.x ** 2 + c.y ** 2 <= m.wall ** 2);
+  for (const snake of m.snakes) if (snake.alive) trimTrail(snake.trail, snake.len);
 }

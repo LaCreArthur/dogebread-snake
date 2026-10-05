@@ -23,9 +23,11 @@ first date; stage 1 is built for that date.
   tap, must work in Telegram's in-app browser.
 - Server: Cloudflare Workers + one Durable Object per room (SQLite-backed, free plan); static assets on
   the same Worker.
-- Network: server owns rules, randomness and bots; each step it broadcasts outcomes (new heads +
-  lengths, deaths, food); clients only draw. Snapshot on join. No client prediction: a queued-turn
-  arrow on the player's head gives instant feedback. The stream is the replay.
+- Network: server owns rules, randomness and bots; each step it broadcasts outcomes (new head
+  positions, headings, lengths, deaths, boops, crumbs eaten and spawned); clients rebuild bodies from
+  head trails with the server's own geometry code. Snapshot on join. Players send a target heading on
+  change (at most 10 a second); an arrow on the head shows it at once. Own-snake prediction comes
+  next. The stream is the replay.
 - Names: generated Doge names (word lists, reroll), never free text.
 - Abuse limits: server-issued room codes only, rooms run only while a human is connected, idle rooms
   close, per-socket message cap.

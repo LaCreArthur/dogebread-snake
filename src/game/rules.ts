@@ -1,239 +1,395 @@
-// Match rules, engine-free. The server runs them; the client imports only constants and types.
-// Numbers and tie-breaks are ported from the Rust game (shared/src/game.rs, client/src/game_systems.rs,
-// client/src/input.rs) so bots and collisions behave the same.
+// Match rules, engine-free. The server runs them; clients share the geometry: each snake is a trail
+// of head positions, one per tick, resampled into slices, so a body is drawn exactly where the
+// server collides it. Units: u = a new snake's width; +y is up; angles in radians.
 
-export const W = 60;
-export const H = 60;
-export const SEATS = 10;
-export const FOOD = 35;
-export const START_LEN = 5;
-export const STEP_MS = 125;
-export const MIN_STEP_MS = 60;
-export const SPEEDUP_EVERY_MS = 20_000;
-export const SHRINK_EVERY_MS = 12_000;
-export const SHRINK_WARN_MS = 2_000;
-export const MIN_ARENA = 6;
+export const TICK_MS = 50;
+export const SEATS = 10; // most humans in one match
+const MIN_SNAKES = 8; // bots fill up to this
+export const START_LEN = 40;
+const MIN_LEN = 20;
+export const SPEED = 8; // u/s
+const TURN_RATE = (240 * Math.PI) / 180; // rad/s at width 1: a full circle about 4 widths across
+const LEN_PER_SLICE = 4;
+const SLICE_GAP = 0.5; // u between slices along the path
+const MAGNET = 2; // u past the head's edge that crumbs are eaten from
+const CRUMBS_PER_U2 = 400 / (Math.PI * 75 ** 2);
+export const GOLD = 5; // length in one crumb dropped by a death
+const HIT = 0.8; // contact radius factor: grazes are forgiven
+const BOOP_SLICES = 3; // a head touching another head or its first slices boops instead of dying
+const BOOP_COST = 8; // length each snake loses in a boop
+export const WALL_HOLD_MS = 20_000; // full arena; food keeps spawning
+const WALL_CLOSE_MS = 90_000; // then the wall closes to WALL_MIN
+const WALL_MIN = 8;
+const WALL_END_MS = 30_000; // then to nothing, so every round ends
+export const MAX_TICKS = (WALL_HOLD_MS + WALL_CLOSE_MS + WALL_END_MS) / TICK_MS + 1;
+export const BOT_THINK_TICKS = 6; // a bot reacts every 300 ms
+const LOOK = 10; // u a bot looks ahead
+const STEP_U = (SPEED * TICK_MS) / 1000;
+const CELL = 3; // u; bigger than any contact or bot look-around distance
 
-/** 0 up (+y), 1 right, 2 down (-y), 3 left. +y is up, as in the Rust game; the client flips it. */
-export type Dir = 0 | 1 | 2 | 3;
-export const DX = [0, 1, 0, -1] as const;
-export const DY = [1, 0, -1, 0] as const;
-export const opposite = (d: Dir) => ((d + 2) % 4) as Dir;
+export const width = (len: number) => Math.min(2.5, 1 + Math.max(0, len - START_LEN) / 400);
+const sliceCount = (len: number) => Math.ceil(len / LEN_PER_SLICE);
+export const wrap = (a: number) => a - 2 * Math.PI * Math.floor((a + Math.PI) / (2 * Math.PI));
+const q = (v: number, k: number) => Math.round(v * k) / k; // wire precision, kept in the state too
 
-export const cell = (x: number, y: number) => y * W + x;
-export const cx = (c: number) => c % W;
-export const cy = (c: number) => Math.floor(c / W);
+/** The wall's radius at a time in the round. */
+function wallRadius(r0: number, ms: number) {
+  const t = ms - WALL_HOLD_MS;
+  if (t <= 0) return r0;
+  if (t <= WALL_CLOSE_MS) return r0 + ((WALL_MIN - r0) * t) / WALL_CLOSE_MS;
+  return Math.max(0, WALL_MIN * (1 - (t - WALL_CLOSE_MS) / WALL_END_MS));
+}
 
-/** [minX, minY, maxX, maxY], max exclusive. */
-export type Bounds = [number, number, number, number];
-export const inside = (b: Bounds, c: number) => cx(c) >= b[0] && cx(c) < b[2] && cy(c) >= b[1] && cy(c) < b[3];
-export const canShrink = (b: Bounds) => b[2] - b[0] > MIN_ARENA && b[3] - b[1] > MIN_ARENA;
-/** True during the warning before the next shrink. */
-export const shrinkWarning = (m: { timeMs: number; bounds: Bounds }) =>
-  canShrink(m.bounds) && SHRINK_EVERY_MS - (m.timeMs % SHRINK_EVERY_MS) <= SHRINK_WARN_MS;
-
-export type Death = "bonk" | "ded" | "crushed";
+export type Death = "bonk" | "wall";
 
 export interface Snake {
   id: number;
   name: string;
   human: boolean;
-  body: number[]; // cells, head first
-  dir: Dir;
-  next: Dir;
+  trail: number[]; // head positions oldest first: x0, y0, x1, y1, ...; the last pair is the head
+  a: number; // heading
+  ta: number; // target heading: the player's input
+  len: number;
   alive: boolean;
-  grow: number;
-  score: number;
   kills: number;
   diedTick: number; // -1 while alive
+}
+
+export interface Crumb {
+  id: number;
+  x: number;
+  y: number;
+  v: number; // length it gives: 1, or GOLD when dropped by a death
 }
 
 export interface Match {
   tick: number;
   timeMs: number;
-  stepMs: number;
-  bounds: Bounds;
+  r0: number; // the arena's radius before the wall moves
+  wall: number;
   snakes: Snake[];
-  food: number[];
+  crumbs: Crumb[];
+  nextCrumb: number;
   rng: number; // server-only: clients must not predict food
   over: boolean;
   winner: number; // snake id, -1 = nobody
 }
 
 export interface StepResult {
-  moved: [id: number, head: number, len: number][];
+  moved: [id: number, x: number, y: number, a: number, ta: number, len: number][];
   deaths: [id: number, killer: number, how: Death][];
-  eaten: [id: number, cell: number][];
-  spawned: number[];
-  shrunk: boolean;
-  spedUp: boolean;
+  boops: [a: number, b: number][];
+  eaten: [crumb: number, id: number][];
+  spawned: [crumb: number, x: number, y: number, v: number][];
 }
 
-const SPAWNS: [number, number, Dir][] = [
-  [10, 10, 1], [49, 10, 0], [10, 49, 1], [49, 49, 2], [30, 10, 0],
-  [10, 30, 1], [49, 30, 3], [30, 49, 2], [20, 20, 1], [40, 40, 3],
-];
-
-export const BOT_NAMES = ["Cheems", "Bonk", "Shibe", "Floof", "Bork", "Snoot", "Woofer", "Pupper", "Doggo", "Smol"];
+const BOT_NAMES = ["Cheems", "Bonk", "Shibe", "Floof", "Bork", "Snoot", "Woofer", "Pupper", "Doggo", "Smol"];
 
 // mulberry32: 32-bit state, integer math only
 function rand(m: Match): number {
   let t = (m.rng = (m.rng + 0x6d2b79f5) | 0);
   t = Math.imul(t ^ (t >>> 15), t | 1);
   t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-  return (t ^ (t >>> 14)) >>> 0;
+  return ((t ^ (t >>> 14)) >>> 0) / 2 ** 32;
 }
-const range = (m: Match, min: number, max: number) => min + (rand(m) % (max - min));
 
-/** Humans take the first seats in order; bots fill the rest. */
+export const head = (s: Pick<Snake, "trail">): [number, number] => [s.trail[s.trail.length - 2], s.trail[s.trail.length - 1]];
+
+/**
+ * Slice centers, head first, every SLICE_GAP along the trail: [x0, y0, x1, y1, ...]. A head given
+ * ahead of the last trail point is used instead of it (the client draws between ticks).
+ */
+export function slicesOf(t: number[], len: number, out: number[] = [], hx?: number, hy?: number): number[] {
+  const n = sliceCount(len);
+  let i = t.length - 2;
+  let px = t[i];
+  let py = t[i + 1];
+  if (hx !== undefined && hy !== undefined) {
+    i = t.length;
+    px = hx;
+    py = hy;
+  }
+  out.length = 0;
+  out.push(px, py);
+  let want = SLICE_GAP;
+  while (out.length < n * 2 && i >= 2) {
+    const qx = t[i - 2];
+    const qy = t[i - 1];
+    const seg = Math.hypot(qx - px, qy - py);
+    if (seg >= want) {
+      px += ((qx - px) * want) / seg;
+      py += ((qy - py) * want) / seg;
+      out.push(px, py);
+      want = SLICE_GAP;
+    } else {
+      want -= seg;
+      px = qx;
+      py = qy;
+      i -= 2;
+    }
+  }
+  return out;
+}
+
+/** Drops the trail points the body no longer reaches. */
+export function trimTrail(t: number[], len: number) {
+  const need = sliceCount(len) * SLICE_GAP + 1;
+  let d = 0;
+  for (let i = t.length - 4; i > 0; i -= 2) {
+    d += Math.hypot(t[i + 2] - t[i], t[i + 3] - t[i + 1]);
+    if (d > need) return void t.splice(0, i);
+  }
+}
+
+/** Every live snake's slices, bucketed by cell for nearby queries. */
+export interface Bodies {
+  slices: number[][]; // by snake id, head first; empty when dead
+  widths: number[];
+  cells: Map<number, number[]>; // cell -> snake id, slice index, ...
+}
+
+const cellKey = (i: number, j: number) => (i + 1024) * 2048 + j + 1024;
+
+export function bodiesOf(snakes: readonly Snake[]): Bodies {
+  const b: Bodies = { slices: [], widths: [], cells: new Map() };
+  for (const s of snakes) {
+    const sl = s.alive ? slicesOf(s.trail, s.len) : [];
+    b.slices[s.id] = sl;
+    b.widths[s.id] = width(s.len);
+    for (let k = 0; k < sl.length; k += 2) {
+      const key = cellKey(Math.floor(sl[k] / CELL), Math.floor(sl[k + 1] / CELL));
+      const list = b.cells.get(key);
+      if (list) list.push(s.id, k / 2);
+      else b.cells.set(key, [s.id, k / 2]);
+    }
+  }
+  return b;
+}
+
+/** Calls f for each slice in the cells around a point (everything within CELL of it, and more). */
+function near(b: Bodies, x: number, y: number, f: (id: number, k: number, sx: number, sy: number) => void) {
+  const ci = Math.floor(x / CELL);
+  const cj = Math.floor(y / CELL);
+  for (let i = ci - 1; i <= ci + 1; i++) {
+    for (let j = cj - 1; j <= cj + 1; j++) {
+      const list = b.cells.get(cellKey(i, j));
+      if (!list) continue;
+      for (let n = 0; n < list.length; n += 2) {
+        const sl = b.slices[list[n]];
+        const k = list[n + 1];
+        f(list[n], k, sl[2 * k], sl[2 * k + 1]);
+      }
+    }
+  }
+}
+
+/** Humans take the first seats in order; bots fill up to MIN_SNAKES. The arena grows with the count. */
 export function createMatch(seed: number, humans: string[]): Match {
-  const snakes: Snake[] = SPAWNS.slice(0, SEATS).map(([x, y, dir], id) => {
-    const body: number[] = [];
-    for (let i = 0; i < START_LEN; i++) body.push(cell(x - DX[dir] * i, y - DY[dir] * i));
+  const n = Math.max(MIN_SNAKES, humans.length);
+  const r0 = q(75 * Math.sqrt(n / 12), 100);
+  const snakes = Array.from({ length: n }, (_, id): Snake => {
+    // evenly on a ring, heading clockwise, so nobody starts nose to nose
+    const t = (2 * Math.PI * id) / n;
+    const a = q(wrap(t - Math.PI / 2), 1000);
+    const x = Math.cos(t) * r0 * 0.6;
+    const y = Math.sin(t) * r0 * 0.6;
+    const trail: number[] = [];
+    for (let i = Math.ceil((sliceCount(START_LEN) * SLICE_GAP) / STEP_U) + 1; i >= 0; i--) {
+      trail.push(q(x - Math.cos(a) * STEP_U * i, 100), q(y - Math.sin(a) * STEP_U * i, 100));
+    }
     const human = id < humans.length;
     return {
-      id, name: human ? humans[id] : BOT_NAMES[id], human, body, dir, next: dir,
-      alive: true, grow: 0, score: 0, kills: 0, diedTick: -1,
+      id, name: human ? humans[id] : BOT_NAMES[id % BOT_NAMES.length], human, trail, a, ta: a,
+      len: START_LEN, alive: true, kills: 0, diedTick: -1,
     };
   });
   const m: Match = {
-    tick: 0, timeMs: 0, stepMs: STEP_MS, bounds: [1, 1, W - 1, H - 1], snakes, food: [],
-    rng: seed | 0, over: false, winner: -1,
+    tick: 0, timeMs: 0, r0, wall: r0, snakes, crumbs: [], nextCrumb: 0, rng: seed | 0, over: false, winner: -1,
   };
-  for (let i = 0; i < FOOD; i++) m.food.push(cell(range(m, 2, W - 2), range(m, 2, H - 2)));
+  refill(m);
   return m;
 }
 
-/** Queue a turn; a 180 against the current heading is ignored. */
-export function turn(m: Match, id: number, d: Dir) {
+/** A player's input: the heading their snake turns toward. */
+export function steer(m: Match, id: number, a: number) {
   const s = m.snakes[id];
-  if (s?.alive && d !== opposite(s.dir)) s.next = d;
+  if (s?.alive && Number.isFinite(a)) s.ta = q(wrap(a), 1000);
 }
 
-const BOT_ORDER: Dir[] = [0, 2, 3, 1]; // the Rust Direction::ALL order, which decides ties
-
-/** Bot brain. Also drives the test AI players, which see the same state as any client. */
-export function botDir(m: Pick<Match, "bounds" | "snakes" | "food">, me: Snake): Dir {
-  const occupied = new Uint8Array(W * H);
-  for (const s of m.snakes) if (s.alive) for (const c of s.body) occupied[c] = 1;
-  const [x0, y0, x1, y1] = m.bounds;
-  const free = (x: number, y: number) => x >= x0 && x < x1 && y >= y0 && y < y1 && !occupied[cell(x, y)];
-  const personality = me.id % 3; // 0 hungry, 1 cautious, 2 aggressive
-  const hx = cx(me.body[0]);
-  const hy = cy(me.body[0]);
-  let best = me.dir;
-  let bestScore = -Infinity;
-  for (const d of BOT_ORDER) {
-    if (d === opposite(me.dir)) continue;
-    const nx = hx + DX[d];
-    const ny = hy + DY[d];
-    if (!free(nx, ny)) continue;
-    // 2-step look-ahead: the next cell needs at least one free exit
-    let exit = false;
-    for (const e of BOT_ORDER) if (e !== opposite(d) && free(nx + DX[e], ny + DY[e])) { exit = true; break; }
-    if (!exit) continue;
-
-    let score = 0;
-    let nearest = Infinity;
-    for (const f of m.food) nearest = Math.min(nearest, Math.abs(cx(f) - nx) + Math.abs(cy(f) - ny));
-    if (nearest < Infinity) {
-      const food = 100 - nearest;
-      score += personality === 0 ? food * 2 : personality === 1 ? food : Math.trunc(food / 2);
+/**
+ * Bot brain, also used by the test AI players: of 16 headings, the one with the most clear space
+ * ahead, then toward the nearest plain crumb, then the least turning; near the wall, back inward.
+ */
+export function botAngle(m: Pick<Match, "wall" | "crumbs">, b: Bodies, me: Snake, random: () => number): number {
+  const [hx, hy] = head(me);
+  const w = width(me.len);
+  let food = me.a;
+  let nearest = Infinity;
+  for (const c of m.crumbs) {
+    const d = (c.x - hx) ** 2 + (c.y - hy) ** 2;
+    if (c.v === 1 && d < nearest) { // golden crumbs are left to the players
+      nearest = d;
+      food = Math.atan2(c.y - hy, c.x - hx);
     }
-    const wall = Math.min(nx - x0, x1 - 1 - nx, ny - y0, y1 - 1 - ny);
-    score += wall * (personality === 1 ? 5 : 2);
-    if (personality !== 0) {
-      for (const o of m.snakes) {
-        if (o === me || !o.alive) continue;
-        const dist = Math.abs(cx(o.body[0]) - nx) + Math.abs(cy(o.body[0]) - ny);
-        if (personality === 2 && dist < 8) score += (8 - dist) * 4; // aggressive: cut heads off
-        if (personality === 1 && dist < 6) score -= (6 - dist) * 3; // cautious: keep away
-      }
-    }
-    if (d === me.dir) score += 3;
-    if (score > bestScore) { bestScore = score; best = d; }
   }
-  return best;
+  const center = Math.atan2(-hy, -hx);
+  const edge = Math.hypot(hx, hy) / Math.max(1, m.wall);
+  let pick = me.a;
+  let top = -Infinity;
+  for (let k = 0; k < 16; k++) {
+    const a = me.a + ((k - 7.5) / 8) * 0.9 * Math.PI;
+    let clear = LOOK;
+    for (let d = 1; d <= LOOK && clear === LOOK; d++) {
+      const px = hx + Math.cos(a) * d;
+      const py = hy + Math.sin(a) * d;
+      if (Math.hypot(px, py) + w > m.wall) clear = d - 1;
+      else near(b, px, py, (id, _k, sx, sy) => {
+        const reach = (w + b.widths[id]) / 2 + 0.5;
+        if (id !== me.id && (sx - px) ** 2 + (sy - py) ** 2 < reach * reach) clear = d - 1;
+      });
+    }
+    const score = clear * 10 + Math.cos(a - food) * 4 + Math.cos(a - me.a) * 2 + Math.cos(a - center) * edge * edge * 6;
+    if (score > top) {
+      top = score;
+      pick = a;
+    }
+  }
+  return wrap(pick + (random() - 0.5) * (Math.PI / 9)); // aim error, +-10 degrees
 }
 
-/** Advance one step. Mutates the match and returns what changed, which is what clients receive. */
+/** Advance one tick. Mutates the match and returns what changed, which is what clients receive. */
 export function step(m: Match): StepResult {
-  const r: StepResult = { moved: [], deaths: [], eaten: [], spawned: [], shrunk: false, spedUp: false };
+  const r: StepResult = { moved: [], deaths: [], boops: [], eaten: [], spawned: [] };
   if (m.over) return r;
   m.tick++;
-
-  // bots all decide on the pre-move state
-  const turns = m.snakes.filter((s) => s.alive && !s.human).map((s) => [s.id, botDir(m, s)] as const);
-  for (const [id, d] of turns) turn(m, id, d);
-
+  m.timeMs += TICK_MS;
+  m.wall = q(wallRadius(m.r0, m.timeMs), 100);
   const movers = m.snakes.filter((s) => s.alive);
-  for (const s of movers) {
-    s.dir = s.next;
-    const h = s.body[0];
-    s.body.unshift(cell(cx(h) + DX[s.dir], cy(h) + DY[s.dir]));
-    if (s.grow > 0) s.grow--;
-    else s.body.pop();
-    r.moved.push([s.id, s.body[0], s.body.length]);
+
+  // bots decide on the pre-move state, each one every BOT_THINK_TICKS
+  const thinkers = movers.filter((s) => !s.human && (m.tick + s.id) % BOT_THINK_TICKS === 0);
+  if (thinkers.length) {
+    const before = bodiesOf(m.snakes);
+    for (const s of thinkers) s.ta = q(botAngle(m, before, s, () => rand(m)), 1000);
   }
 
-  // collisions against the post-move state; the first cause found for a snake wins
-  const bodies = new Map<number, number>(); // cell -> owner, heads excluded
-  for (const s of movers) for (let i = 1; i < s.body.length; i++) bodies.set(s.body[i], s.id);
-  const dead = new Map<number, [number, Death]>();
-  const kill = (id: number, killer: number, how: Death) => dead.has(id) || dead.set(id, [killer, how]);
+  const dt = TICK_MS / 1000;
   for (const s of movers) {
-    const h = s.body[0];
-    if (!inside(m.bounds, h)) { kill(s.id, -1, "ded"); continue; }
-    const owner = bodies.get(h);
-    if (owner === s.id) { kill(s.id, -1, "ded"); continue; }
-    if (owner !== undefined) kill(s.id, owner, "bonk");
-    for (const o of movers) if (o !== s && o.body[0] === h) { kill(s.id, -1, "ded"); kill(o.id, -1, "ded"); }
+    const turn = (TURN_RATE / width(s.len)) * dt;
+    s.a = q(wrap(s.a + Math.max(-turn, Math.min(turn, wrap(s.ta - s.a)))), 1000);
+    const [x, y] = head(s);
+    s.trail.push(q(x + Math.cos(s.a) * SPEED * dt, 100), q(y + Math.sin(s.a) * SPEED * dt, 100));
   }
+
+  // contacts on the post-move bodies, all at once: a head on another body dies, heads that meet boop
+  const b = bodiesOf(m.snakes);
+  const dead = new Map<number, [killer: number, how: Death]>();
+  const boops = new Map<number, [number, number]>();
+  for (const s of movers) {
+    const [x, y] = head(s);
+    const w = b.widths[s.id];
+    if (Math.hypot(x, y) + (w / 2) * HIT > m.wall) {
+      dead.set(s.id, [-1, "wall"]);
+      continue;
+    }
+    let killer = -1;
+    let booped = -1;
+    near(b, x, y, (id, k, sx, sy) => {
+      if (id === s.id) return; // your own body is harmless
+      const reach = ((w + b.widths[id]) / 2) * HIT;
+      if ((sx - x) ** 2 + (sy - y) ** 2 >= reach * reach) return;
+      if (k >= BOOP_SLICES) killer = id;
+      else booped = id;
+    });
+    if (killer >= 0) dead.set(s.id, [killer, "bonk"]);
+    else if (booped >= 0) {
+      const pair: [number, number] = [Math.min(s.id, booped), Math.max(s.id, booped)];
+      boops.set(pair[0] * 64 + pair[1], pair);
+    }
+  }
+
+  const drops: [number, number][] = [];
   for (const [id, [killer, how]] of dead) {
-    if (killer >= 0) m.snakes[killer].kills++;
-    m.snakes[id].alive = false;
-    m.snakes[id].diedTick = m.tick;
+    const s = m.snakes[id];
+    s.alive = false;
+    s.diedTick = m.tick;
     r.deaths.push([id, killer, how]);
+    if (killer >= 0) {
+      m.snakes[killer].kills++;
+      m.snakes[killer].len = q(m.snakes[killer].len + s.len / 4, 10);
+    }
+    // half the length bursts into golden crumbs along the body; the last quarter is lost
+    const sl = b.slices[id];
+    const n = Math.floor(s.len / 2 / GOLD);
+    for (let i = 0; i < n; i++) {
+      const j = 2 * Math.floor((i * sl.length) / (2 * n));
+      drops.push([sl[j] + rand(m) - 0.5, sl[j + 1] + rand(m) - 0.5]);
+    }
+  }
+
+  for (const [i, j] of boops.values()) {
+    const s = m.snakes[i];
+    const o = m.snakes[j];
+    if (!s.alive || !o.alive) continue;
+    const [sx, sy] = head(s);
+    const [ox, oy] = head(o);
+    const d = Math.hypot(sx - ox, sy - oy);
+    const a = d > 1e-6 ? Math.atan2(sy - oy, sx - ox) : wrap(s.a + Math.PI);
+    // push the heads apart, turn them away from each other, and charge both
+    const push = Math.max(0, ((b.widths[i] + b.widths[j]) / 2) * HIT - d) / 2 + 0.05;
+    setHead(s, sx + Math.cos(a) * push, sy + Math.sin(a) * push);
+    setHead(o, ox - Math.cos(a) * push, oy - Math.sin(a) * push);
+    s.a = q(a, 1000);
+    o.a = q(wrap(a + Math.PI), 1000);
+    s.len = q(Math.max(MIN_LEN, s.len - BOOP_COST), 10);
+    o.len = q(Math.max(MIN_LEN, o.len - BOOP_COST), 10);
+    r.boops.push([i, j]);
   }
   endIfDecided(m);
 
-  const heads = new Map<number, Snake>();
-  for (const s of m.snakes) if (s.alive) heads.set(s.body[0], s);
-  m.food = m.food.filter((f) => {
-    const s = heads.get(f);
-    if (!s) return true;
-    s.grow += 2;
-    s.score++;
-    r.eaten.push([s.id, f]);
-    return false;
-  });
-  const [x0, y0, x1, y1] = m.bounds;
-  while (m.food.length < FOOD) {
-    const f = cell(range(m, x0 + 1, x1 - 1), range(m, y0 + 1, y1 - 1));
-    m.food.push(f);
-    r.spawned.push(f);
+  for (const s of m.snakes) {
+    if (!s.alive) continue;
+    const [x, y] = head(s);
+    const reach = width(s.len) / 2 + MAGNET;
+    m.crumbs = m.crumbs.filter((c) => {
+      if ((c.x - x) ** 2 + (c.y - y) ** 2 > reach * reach) return true;
+      s.len = q(s.len + c.v, 10);
+      r.eaten.push([c.id, s.id]);
+      return false;
+    });
   }
+  for (const [x, y] of drops) addCrumb(m, r, x, y, GOLD);
+  refill(m, r);
+  m.crumbs = m.crumbs.filter((c) => c.x ** 2 + c.y ** 2 <= m.wall ** 2);
 
-  const before = m.timeMs;
-  m.timeMs += m.stepMs;
-  const crossed = (every: number) => Math.floor(m.timeMs / every) > Math.floor(before / every);
-  if (crossed(SPEEDUP_EVERY_MS)) {
-    m.stepMs = Math.max(MIN_STEP_MS, Math.round(m.stepMs * 0.85));
-    r.spedUp = true;
-  }
-  if (crossed(SHRINK_EVERY_MS) && canShrink(m.bounds)) {
-    m.bounds = [x0 + 1, y0 + 1, x1 - 1, y1 - 1];
-    r.shrunk = true;
-    for (const s of m.snakes) {
-      if (!s.alive || inside(m.bounds, s.body[0])) continue;
-      s.alive = false;
-      s.diedTick = m.tick;
-      r.deaths.push([s.id, -1, "crushed"]);
-    }
-    m.food = m.food.filter((f) => inside(m.bounds, f));
-    endIfDecided(m);
+  for (const s of movers) {
+    const [x, y] = head(s);
+    r.moved.push([s.id, x, y, s.a, s.ta, s.len]);
+    if (s.alive) trimTrail(s.trail, s.len);
   }
   return r;
+}
+
+function setHead(s: Snake, x: number, y: number) {
+  s.trail[s.trail.length - 2] = q(x, 100);
+  s.trail[s.trail.length - 1] = q(y, 100);
+}
+
+function addCrumb(m: Match, r: StepResult | undefined, x: number, y: number, v: number) {
+  const c = { id: m.nextCrumb++, x: q(x, 100), y: q(y, 100), v };
+  m.crumbs.push(c);
+  r?.spawned.push([c.id, c.x, c.y, v]);
+}
+
+/** Food spawns until the wall starts closing; after that only deaths feed the arena. */
+function refill(m: Match, r?: StepResult) {
+  if (m.timeMs >= WALL_HOLD_MS) return;
+  const target = Math.round(CRUMBS_PER_U2 * Math.PI * m.r0 ** 2);
+  while (m.crumbs.length < target) {
+    const d = m.wall * 0.95 * Math.sqrt(rand(m));
+    const t = 2 * Math.PI * rand(m);
+    addCrumb(m, r, Math.cos(t) * d, Math.sin(t) * d, 1);
+  }
 }
 
 function endIfDecided(m: Match) {
@@ -244,10 +400,10 @@ function endIfDecided(m: Match) {
   m.winner = alive[0]?.id ?? -1;
 }
 
-/** Best first: alive, then died later, then kills, then score. */
+/** Best first: alive, then died later, then bonks, then length. */
 export function ranking(m: Pick<Match, "snakes">): number[] {
   const last = (s: Snake) => (s.alive ? Number.MAX_SAFE_INTEGER : s.diedTick);
   return [...m.snakes]
-    .sort((a, b) => last(b) - last(a) || b.kills - a.kills || b.score - a.score || a.id - b.id)
+    .sort((a, b) => last(b) - last(a) || b.kills - a.kills || b.len - a.len || a.id - b.id)
     .map((s) => s.id);
 }
