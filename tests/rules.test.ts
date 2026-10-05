@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  createMatch, GOLD, MAX_TICKS, ranking, SEATS, slicesOf, START_LEN, steer, step, WALL_HOLD_MS, type Match,
+  boost, createMatch, GOLD, head, MAX_TICKS, ranking, SEATS, slicesOf, START_LEN, steer, step, WALL_HOLD_MS,
+  type Match,
 } from "../src/game/rules";
 import type { PublicMatch, ServerMsg } from "../src/game/protocol";
 import { apply, newReplica } from "../src/game/replica";
@@ -12,7 +13,7 @@ const CHECK_EVERY = 25; // ticks between full client/server comparisons
 const view = (m: PublicMatch) => JSON.stringify({
   tick: m.tick, timeMs: m.timeMs, wall: m.wall, over: m.over, winner: m.winner,
   crumbs: [...m.crumbs].sort((a, b) => a.id - b.id),
-  snakes: m.snakes.map((s) => [s.id, s.trail, s.a, s.ta, s.len, s.alive, s.kills, s.diedTick]),
+  snakes: m.snakes.map((s) => [s.id, s.trail, s.a, s.ta, s.boost, s.len, s.alive, s.kills, s.diedTick]),
 });
 
 // the same path as the room: JSON over the wire, then the replica
@@ -27,6 +28,8 @@ describe("bot-only matches", () => {
       apply(client, wire({ t: "snap", m: snap, countdownMs: 0 }));
       while (!m.over) {
         if (m.tick >= MAX_TICKS) expect.fail(`seed ${seed}: no winner after ${MAX_TICKS} ticks`);
+        // bots never boost, so three of them press and release it the way players might
+        for (let id = 0; id < 3; id++) if ((m.tick + 7 * id) % 30 === 0) boost(m, id, (m.tick * 31 + seed + id) % 3 === 0);
         const r = step(m);
         apply(client, wire({ t: "step", tick: m.tick, timeMs: m.timeMs, wall: m.wall, ...r }));
         if (m.over) apply(client, wire({ t: "over", winner: m.winner, rank: ranking(m) }));
@@ -101,9 +104,38 @@ describe("contacts", () => {
 
   it("a crumb within reach of the head is eaten and grows the snake", () => {
     const m = arena([0, 0, 0], [-30, -30, 0]);
-    m.crumbs = [{ id: 7, x: 2.8, y: 0, v: 1 }];
+    m.crumbs = [{ id: 7, x: 2.8, y: 0, v: 1, owner: -1 }];
     expect(step(m).eaten).toEqual([[7, 0]]);
     expect(m.snakes[0].len).toBe(START_LEN + 1);
+  });
+});
+
+describe("boost", () => {
+  it("doubles the speed and burns length to the minimum; about half of it drops behind, for the others only", () => {
+    const m = arena([0, 0, 0], [-30, -30, 0]);
+    boost(m, 0, true);
+    for (let i = 0; i < 20; i++) step(m);
+    expect(head(m.snakes[0])[0]).toBeCloseTo(16, 1);
+    expect(m.snakes[0].len).toBe(START_LEN - 4); // the 4 a second minimum, more than 2% of 40
+    // circling over its own drops until the length runs out: it eats none of them
+    for (let i = 0; i < 100; i++) {
+      steer(m, 0, m.snakes[0].a + Math.PI / 2);
+      step(m);
+    }
+    expect(m.snakes[0].len).toBe(20);
+    const drops = m.crumbs.filter((c) => c.owner === 0 && c.v === 1).length;
+    expect(drops).toBeGreaterThanOrEqual(5); // 20 burned: 10 on average
+    expect(drops).toBeLessThanOrEqual(15);
+    const [x, y] = head(m.snakes[0]);
+    m.crumbs = [{ id: 7, x: x + 1, y, v: 1, owner: 0 }, { id: 8, x: x + 1.1, y, v: 1, owner: 1 }];
+    expect(step(m).eaten).toEqual([[8, 0]]);
+  });
+
+  it("does nothing at the minimum length", () => {
+    const m = arena([0, 0, 0, 20], [-30, -30, 0]);
+    boost(m, 0, true);
+    const r = step(m);
+    expect([head(m.snakes[0])[0], m.snakes[0].len, r.spawned]).toEqual([0.4, 20, []]);
   });
 });
 

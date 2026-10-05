@@ -1,7 +1,7 @@
 // Browser entry: home screen, room connection, lobby panel, HUD and input. All match state comes
 // from the server through the replica; this file only shows it and sends my heading.
 import "./style.css";
-import { head, SEATS, WALL_HOLD_MS, wrap } from "../game/rules";
+import { boosting, head, SEATS, WALL_HOLD_MS, wrap } from "../game/rules";
 import { validName, type ClientMsg, type NameIdx, type ServerMsg, type StepMsg } from "../game/protocol";
 import { apply, newReplica, type Replica } from "../game/replica";
 import { createRenderer, snakeColor, STICK_PX, type Input } from "./render";
@@ -38,8 +38,10 @@ const savedName = (): NameIdx | null => {
 };
 
 let r: Replica = newReplica();
-const input: Input = { steer: null, stick: null };
+const input: Input = { steer: null, boost: false, stick: null };
 let sent: number | null = null; // the last heading sent
+const boostBy = new Set<number | string>(); // what holds boost down: pointer ids, "Space"
+let boostSent = false;
 let sentAt = -Infinity;
 let steerTimer = 0;
 let lastStepAt = 0;
@@ -87,6 +89,8 @@ function onMessage(msg: ServerMsg) {
   if (msg.t === "snap") {
     countdownEnd = msg.countdownMs ? now + msg.countdownMs : -Infinity;
     input.steer = sent = null;
+    boostBy.clear();
+    input.boost = boostSent = false;
     feed.replaceChildren();
     bannerUntil = 0;
   } else if (msg.t === "step" && r.m) {
@@ -157,7 +161,13 @@ function onStep(msg: StepMsg, before: number) {
   }
 }
 
-// ---- input: my snake turns toward a heading at any angle; at most 10 headings a second go out
+// ---- input: my snake turns toward a heading at any angle; at most 10 headings a second go out,
+// while boost on/off goes at once
+
+const steerable = () => {
+  const me = r.m && r.seat >= 0 ? r.m.snakes[r.seat] : undefined;
+  return me?.alive && (r.phase === "playing" || r.phase === "countdown") ? me : undefined;
+};
 
 function steerTo(a: number) {
   input.steer = a;
@@ -165,9 +175,8 @@ function steerTo(a: number) {
 }
 
 function flushSteer() {
-  const me = r.m && r.seat >= 0 ? r.m.snakes[r.seat] : undefined;
   const a = input.steer;
-  if (a === null || !me?.alive || (r.phase !== "playing" && r.phase !== "countdown")) return;
+  if (a === null || !steerable()) return;
   if (sent !== null && Math.abs(wrap(a - sent)) < 0.03) return;
   const wait = sentAt + 100 - performance.now();
   if (wait > 0) {
@@ -182,13 +191,31 @@ function flushSteer() {
   sentAt = performance.now();
 }
 
-// mouse: the snake heads toward the pointer. Touch: a stick appears under the thumb, the drag
-// direction steers, and the stick follows a long drag so reversing stays one short move. A thumb
-// on the stick outranks a mouse resting on the same screen.
+function holdBoost(by: number | string, on: boolean) {
+  if (on) boostBy.add(by);
+  else boostBy.delete(by);
+  flushBoost();
+}
+
+function flushBoost() {
+  input.boost = boostBy.size > 0;
+  const me = steerable();
+  if (!me || input.boost === boostSent) return;
+  send({ t: "boost", on: input.boost });
+  boostSent = input.boost;
+  if (input.boost && boosting({ boost: true, len: me.len })) play("boost");
+}
+
+// mouse: the snake heads toward the pointer, a held button boosts. Touch: a stick appears under the
+// thumb, the drag direction steers, and the stick follows a long drag so reversing stays one short
+// move; a second finger, or a double tap held down, boosts. A thumb on the stick outranks a mouse
+// resting on the same screen.
+let lastLift = -Infinity; // when the stick's thumb last lifted
 canvas.addEventListener("pointerdown", (e) => {
-  if (e.pointerType !== "mouse" && !input.stick) {
-    input.stick = { id: e.pointerId, ax: e.clientX, ay: e.clientY, x: e.clientX, y: e.clientY };
-  }
+  if (e.pointerType === "mouse") return void (e.button === 0 && holdBoost(e.pointerId, true));
+  if (input.stick) return holdBoost(e.pointerId, true);
+  input.stick = { id: e.pointerId, ax: e.clientX, ay: e.clientY, x: e.clientX, y: e.clientY };
+  if (e.timeStamp - lastLift < 300) holdBoost(e.pointerId, true);
 });
 canvas.addEventListener("pointermove", (e) => {
   if (e.pointerType === "mouse") {
@@ -211,11 +238,15 @@ canvas.addEventListener("pointermove", (e) => {
   st.y = e.clientY;
   if (d > 12) steerTo(Math.atan2(-dy, dx));
 });
+// on the window: a mouse button can be released outside the canvas
 const lift = (e: PointerEvent) => {
-  if (input.stick?.id === e.pointerId) input.stick = null;
+  holdBoost(e.pointerId, false);
+  if (input.stick?.id !== e.pointerId) return;
+  input.stick = null;
+  lastLift = e.timeStamp;
 };
-canvas.addEventListener("pointerup", lift);
-canvas.addEventListener("pointercancel", lift);
+addEventListener("pointerup", lift);
+addEventListener("pointercancel", lift);
 
 // keys: arrows or WASD point the snake; two pressed together point it diagonally
 const KEYS: Record<string, [number, number]> = {
@@ -224,6 +255,10 @@ const KEYS: Record<string, [number, number]> = {
 };
 const held = new Set<string>();
 addEventListener("keydown", (e) => {
+  if (e.code === "Space" && panel.hidden) {
+    e.preventDefault();
+    return holdBoost("Space", true);
+  }
   if (!KEYS[e.code] || e.target instanceof HTMLInputElement) return;
   e.preventDefault();
   held.add(e.code);
@@ -236,8 +271,15 @@ addEventListener("keydown", (e) => {
   }
   if (x || y) steerTo(Math.atan2(y, x));
 });
-addEventListener("keyup", (e) => held.delete(e.code));
-addEventListener("blur", () => held.clear());
+addEventListener("keyup", (e) => {
+  held.delete(e.code);
+  if (e.code === "Space") holdBoost("Space", false);
+});
+addEventListener("blur", () => {
+  held.clear();
+  boostBy.clear();
+  flushBoost();
+});
 
 // ---- screens
 
@@ -264,7 +306,7 @@ function home(error = "") {
   panel.replaceChildren(
     h("h1", { textContent: "DogeBread Snake" }),
     h("p", { textContent: "Up to 10 players in one shrinking arena. Last snake alive wins. Bots fill the empty seats." }),
-    h("p", { textContent: "Steer with the mouse, a thumb drag, or the arrow keys." }),
+    h("p", { textContent: "Steer: mouse, thumb drag or arrows. Boost: hold click or Space; on a phone, double-tap and hold." }),
     h("button", { className: "main", textContent: "Create room", onclick: createRoom }),
     join,
     ...(error ? [h("p", { textContent: error })] : []),

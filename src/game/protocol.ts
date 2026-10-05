@@ -29,4 +29,4 @@ export type ServerMsg =
   | StepMsg
   | { t: "over"; winner: number; rank: number[] };
 
-export type ClientMsg = { t: "steer"; a: number } | { t: "start" } | { t: "name" };
+export type ClientMsg = { t: "steer"; a: number } | { t: "boost"; on: boolean } | { t: "start" } | { t: "name" };

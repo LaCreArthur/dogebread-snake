@@ -2,7 +2,7 @@
 // step it broadcasts what changed. Plain (non-hibernating) WebSockets keep it in memory while
 // anyone is connected; idle rooms close so they stop using the free duration quota.
 import { DurableObject } from "cloudflare:workers";
-import { createMatch, ranking, SEATS, steer, step, TICK_MS, type Match } from "../game/rules";
+import { boost, createMatch, ranking, SEATS, steer, step, TICK_MS, type Match } from "../game/rules";
 import {
   NAME_ADJ, NAME_NOUN, nameOf, validName,
   type ClientMsg, type NameIdx, type Phase, type ServerMsg,
@@ -97,6 +97,8 @@ export class Room extends DurableObject<Env> {
     }
     if (msg.t === "steer" && this.match && p.seat >= 0 && typeof msg.a === "number") {
       steer(this.match, p.seat, msg.a);
+    } else if (msg.t === "boost" && this.match && p.seat >= 0 && typeof msg.on === "boolean") {
+      boost(this.match, p.seat, msg.on);
     } else if (msg.t === "start" && p.id === this.host && (this.phase === "lobby" || this.phase === "over")) {
       this.start();
     } else if (msg.t === "name") {

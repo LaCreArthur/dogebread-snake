@@ -35,6 +35,14 @@ Branch: ts-rebuild (master keeps the Rust game until switch-over).
   then watched to the end (bot won at 1:31, results panel), no console errors.
   Open (polish): the results panel covers the winner, so the end has no victory moment; snakes read
   small on a phone (~10 px wide) - Arthur's playtest judges.
+- Cycle 6 done (boost, from the v3 build order): hold click / Space / a second finger / double-tap and
+  hold. Speed and turn x2 while len > 20; burns max(4, 2% len)/s; each boosting tick drops a 1-crumb
+  at its tail with chance burn/2 (first version dropped one per even length crossed, which over-drops
+  when the snake eats while boosting); the owner cannot eat its own drops. Bots never boost.
+  Boosting glow (pulsing white halo), gold stick ring, zoom sound. Wire: moved + boost 0/1, spawned +
+  owner, client {t:"boost", on}. typecheck (both tsconfigs), 9 vitest tests (soak toggles boost on 3
+  snakes), build pass (17.0 kB JS, 7.7 kB gzip). Headless replay at 390x844: double-tap-hold boost
+  for 20 ticks moved 15.9 u (2x), lifting stops it, no console errors. Cut-off tagging not built yet.
 
 ## Measured (bot-only, 100 seeds, free steering, 2026-10-05; grid numbers in git at 400a8da)
 - Round length p10 75 s, median 95 s, p90 108 s, max 111 s (target 60-120 s, max 2:30). Deaths: 96%
@@ -153,13 +161,17 @@ u = new-snake width. Bots obey all human rules.
 - Bots (and dev AI players): every 6 ticks, best of 16 headings within +-162 deg: clear distance
   (1 u probes to 10 u) x10 + toward the nearest plain crumb x4 + keep x2 + center x6*edge^2; +-10 deg
   error.
-- Wire: step {tick, timeMs, wall, moved [id,x,y,a,ta,len], deaths [id,killer,how], boops [a,b],
-  eaten [crumb,id], spawned [crumb,x,y,v]}; client {t:"steer", a} <= 10/s, first change at once,
-  skip < 0.03 rad.
+- Boost: while held and len > 20, speed and turn x2, burn max(4, 2% len)/s (floor 20); each tick a
+  1-crumb drops at the tail with chance burn/2, owned by the booster, who cannot eat it. Bots never
+  boost.
+- Wire: step {tick, timeMs, wall, moved [id,x,y,a,ta,len,boost 0|1], deaths [id,killer,how], boops
+  [a,b], eaten [crumb,id], spawned [crumb,x,y,v,owner]}; client {t:"steer", a} <= 10/s, first change
+  at once, skip < 0.03 rad; {t:"boost", on} at once on change.
 - Client: camera on my head (1.2 s on my crumbs after death, then the longest); zoom
   sqrt(screen px^2/3500)/(1 + 0.3(w-1)); heads glide along their heading between ticks. Touch stick
   (12 px dead zone, anchor follows past 60 px, outranks the mouse); mouse = angle from screen center;
-  arrows/WASD = 8 directions on keydown.
+  arrows/WASD = 8 directions on keydown. Boost: mouse button, Space, a second finger, or a double tap
+  (< 300 ms after a lift) held; window blur releases everything.
 - Text: "such 3 / very 2 / much 1 / WOW GO!", "X bonked by Y! wow", "X squished! such wall!",
   "wow. such ded.", "much bonk! wow", "much wall! wow", "boop!".
 
@@ -191,4 +203,6 @@ unifralabs DogecoinTestnetWallet. MyDoge extension API: connect, requestTransact
 - 2026-10-05 Playwright MCP refuses screenshot and code files outside the project ("outside allowed
   roots"): keep replay scripts and captures in .playwright-mcp/ (gitignored), not the scratchpad.
 - 2026-10-05 The Playwright MCP browser gets real OS mouse moves (trusted "mouse" pointermoves) that
-  steered against the replay's touch input. Before blaming input code, log pointerType + isTrusted.
+  steered against the replay's touch input (and probably boosted once). The replay now launches its own
+  headless Chrome (launch({headless: true, channel: "chrome"}); the default headless shell is not
+  installed). Before blaming input code, log pointerType + isTrusted.

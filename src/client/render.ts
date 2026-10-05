@@ -1,7 +1,7 @@
 // Canvas drawing. The camera follows my snake (or, a moment after I die, the longest one) and zooms
 // out as snakes widen. Bodies come from the shared trail geometry, so they are drawn where the
 // server collides them; between ticks each head glides on along its heading.
-import { head, slicesOf, SPEED, TICK_MS, WALL_HOLD_MS, width, type Snake } from "../game/rules";
+import { boosting, head, slicesOf, speedOf, TICK_MS, WALL_HOLD_MS, width, type Snake } from "../game/rules";
 import type { Replica } from "../game/replica";
 
 const OUTSIDE = "#120f1f";
@@ -34,6 +34,7 @@ const POP_S = 0.9;
 
 export interface Input {
   steer: number | null; // my heading input
+  boost: boolean;
   stick: { id: number; ax: number; ay: number; x: number; y: number } | null; // touch: pointer, anchor and finger, px
 }
 
@@ -80,10 +81,11 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     if (!m) return;
 
     // between ticks, live heads glide on along their heading
-    const ahead = r.phase === "playing" && !m.over ? (Math.min(sinceTick, TICK_MS) / 1000) * SPEED : 0;
+    const since = r.phase === "playing" && !m.over ? Math.min(sinceTick, TICK_MS) / 1000 : 0;
     const glide = (s: Snake): [number, number] => {
       const [x, y] = head(s);
-      return s.alive ? [x + Math.cos(s.a) * ahead, y + Math.sin(s.a) * ahead] : [x, y];
+      const d = s.alive ? since * speedOf(s) : 0;
+      return [x + Math.cos(s.a) * d, y + Math.sin(s.a) * d];
     };
 
     // camera: my snake, held on my crumbs a moment after I die, then the longest; the whole arena at the end
@@ -158,6 +160,11 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       ctx.beginPath();
       ctx.moveTo(X(sl[0]), Y(sl[1]));
       for (let i = 2; i < sl.length; i += 2) ctx.lineTo(X(sl[i]), Y(sl[i + 1]));
+      if (boosting(s)) {
+        ctx.strokeStyle = `rgba(255,255,255,${0.25 + 0.15 * Math.sin(now / 50)})`;
+        ctx.lineWidth = w + 8;
+        ctx.stroke();
+      }
       ctx.strokeStyle = snakeColor(s.id, 0.45);
       ctx.lineWidth = w + 2;
       ctx.stroke();
@@ -237,7 +244,7 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     }
     if (input.stick) {
       const { ax, ay, x, y } = input.stick;
-      ctx.strokeStyle = "rgba(255,255,255,0.25)";
+      ctx.strokeStyle = input.boost ? "rgba(232,176,74,0.8)" : "rgba(255,255,255,0.25)";
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.arc(ax, ay, STICK_PX, 0, 2 * Math.PI);

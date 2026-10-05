@@ -28,6 +28,8 @@ const DEFS = {
     Math.sin(TAU * (800 - (600 * t) / d) * (1 + 0.02 * Math.sin(TAU * 6 * t)) * t) * Math.sqrt(1 - t / d) * 0.45],
   // not in the Rust game: my bonk, a "boing" falling from 320 to 120 Hz
   bonk: [0.18, () => (t, d) => Math.sin(TAU * (320 * t - (100 * t * t) / d)) * (1 - t / d) ** 2 * 0.6],
+  // my boost: a quick zoom rising from 250 to 900 Hz
+  boost: [0.15, () => (t, d) => Math.sin(TAU * (250 * t + (325 * t * t) / d)) * (1 - t / d) * 0.3],
   // my boop: a short squeak rising from 500 to 900 Hz
   boop: [0.09, () => (t, d) => Math.sin(TAU * (500 * t + (200 * t * t) / d)) * (1 - t / d) * 0.5],
 } satisfies Record<string, [seconds: number, make: () => Wave]>;

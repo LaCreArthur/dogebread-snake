@@ -43,12 +43,13 @@ function applyStep(m: PublicMatch, s: StepMsg) {
   m.tick = s.tick;
   m.timeMs = s.timeMs;
   m.wall = s.wall;
-  for (const [id, x, y, a, ta, len] of s.moved) {
+  for (const [id, x, y, a, ta, len, boost] of s.moved) {
     const snake = m.snakes[id];
     snake.trail.push(x, y);
     snake.a = a;
     snake.ta = ta;
     snake.len = len;
+    snake.boost = boost === 1;
   }
   for (const [id, killer] of s.deaths) {
     m.snakes[id].alive = false;
@@ -57,7 +58,7 @@ function applyStep(m: PublicMatch, s: StepMsg) {
   }
   const eaten = new Set(s.eaten.map(([c]) => c));
   m.crumbs = m.crumbs.filter((c) => !eaten.has(c.id));
-  for (const [id, x, y, v] of s.spawned) m.crumbs.push({ id, x, y, v });
+  for (const [id, x, y, v, owner] of s.spawned) m.crumbs.push({ id, x, y, v, owner });
   m.crumbs = m.crumbs.filter((c) => c.x ** 2 + c.y ** 2 <= m.wall ** 2);
   for (const snake of m.snakes) if (snake.alive) trimTrail(snake.trail, snake.len);
 }

@@ -9,6 +9,9 @@ export const START_LEN = 40;
 const MIN_LEN = 20;
 export const SPEED = 8; // u/s
 const TURN_RATE = (240 * Math.PI) / 180; // rad/s at width 1: a full circle about 4 widths across
+const BOOST = 2; // speed and turn rate factor while boosting, so the turning circle stays the same
+const BURN = 0.02; // length burned per second of boosting, as a share of length...
+const BURN_MIN = 4; // ...and at least this; half of it drops behind as crumbs
 const LEN_PER_SLICE = 4;
 const SLICE_GAP = 0.5; // u between slices along the path
 const MAGNET = 2; // u past the head's edge that crumbs are eaten from
@@ -49,6 +52,7 @@ export interface Snake {
   trail: number[]; // head positions oldest first: x0, y0, x1, y1, ...; the last pair is the head
   a: number; // heading
   ta: number; // target heading: the player's input
+  boost: boolean; // the player's input; no effect at MIN_LEN or below
   len: number;
   alive: boolean;
   kills: number;
@@ -60,6 +64,7 @@ export interface Crumb {
   x: number;
   y: number;
   v: number; // length it gives: 1, or GOLD when dropped by a death
+  owner: number; // the snake whose boost dropped it, which cannot eat it; -1 = anyone
 }
 
 export interface Match {
@@ -76,11 +81,11 @@ export interface Match {
 }
 
 export interface StepResult {
-  moved: [id: number, x: number, y: number, a: number, ta: number, len: number][];
+  moved: [id: number, x: number, y: number, a: number, ta: number, len: number, boost: 0 | 1][];
   deaths: [id: number, killer: number, how: Death][];
   boops: [a: number, b: number][];
   eaten: [crumb: number, id: number][];
-  spawned: [crumb: number, x: number, y: number, v: number][];
+  spawned: [crumb: number, x: number, y: number, v: number, owner: number][];
 }
 
 const BOT_NAMES = ["Cheems", "Bonk", "Shibe", "Floof", "Bork", "Snoot", "Woofer", "Pupper", "Doggo", "Smol"];
@@ -94,6 +99,8 @@ function rand(m: Match): number {
 }
 
 export const head = (s: Pick<Snake, "trail">): [number, number] => [s.trail[s.trail.length - 2], s.trail[s.trail.length - 1]];
+export const boosting = (s: Pick<Snake, "boost" | "len">) => s.boost && s.len > MIN_LEN;
+export const speedOf = (s: Pick<Snake, "boost" | "len">) => (boosting(s) ? SPEED * BOOST : SPEED);
 
 /**
  * Slice centers, head first, every SLICE_GAP along the trail: [x0, y0, x1, y1, ...]. A head given
@@ -199,7 +206,7 @@ export function createMatch(seed: number, humans: string[]): Match {
     }
     const human = id < humans.length;
     return {
-      id, name: human ? humans[id] : BOT_NAMES[id % BOT_NAMES.length], human, trail, a, ta: a,
+      id, name: human ? humans[id] : BOT_NAMES[id % BOT_NAMES.length], human, trail, a, ta: a, boost: false,
       len: START_LEN, alive: true, kills: 0, diedTick: -1,
     };
   });
@@ -214,6 +221,12 @@ export function createMatch(seed: number, humans: string[]): Match {
 export function steer(m: Match, id: number, a: number) {
   const s = m.snakes[id];
   if (s?.alive && Number.isFinite(a)) s.ta = q(wrap(a), 1000);
+}
+
+/** A player's input: boost on or off. */
+export function boost(m: Match, id: number, on: boolean) {
+  const s = m.snakes[id];
+  if (s?.alive) s.boost = on;
 }
 
 /**
@@ -274,15 +287,27 @@ export function step(m: Match): StepResult {
   }
 
   const dt = TICK_MS / 1000;
+  const droppers: number[] = []; // boosting snakes that drop a crumb this tick
   for (const s of movers) {
-    const turn = (TURN_RATE / width(s.len)) * dt;
+    const k = boosting(s) ? BOOST : 1;
+    const turn = ((TURN_RATE * k) / width(s.len)) * dt;
     s.a = q(wrap(s.a + Math.max(-turn, Math.min(turn, wrap(s.ta - s.a)))), 1000);
     const [x, y] = head(s);
-    s.trail.push(q(x + Math.cos(s.a) * SPEED * dt, 100), q(y + Math.sin(s.a) * SPEED * dt, 100));
+    s.trail.push(q(x + Math.cos(s.a) * SPEED * k * dt, 100), q(y + Math.sin(s.a) * SPEED * k * dt, 100));
+    if (k === 1) continue;
+    // crumbs of 1 at a chance of half the burn: on average, half of the cost lies behind for the others
+    const before = s.len;
+    s.len = q(Math.max(MIN_LEN, s.len - Math.max(BURN_MIN, BURN * s.len) * dt), 10);
+    if (rand(m) < (before - s.len) / 2) droppers.push(s.id);
   }
 
   // contacts on the post-move bodies, all at once: a head on another body dies, heads that meet boop
   const b = bodiesOf(m.snakes);
+  const drops: [x: number, y: number, v: number, owner: number][] = [];
+  for (const id of droppers) {
+    const sl = b.slices[id];
+    drops.push([sl[sl.length - 2] + (rand(m) - 0.5) * 0.5, sl[sl.length - 1] + (rand(m) - 0.5) * 0.5, 1, id]);
+  }
   const dead = new Map<number, [killer: number, how: Death]>();
   const boops = new Map<number, [number, number]>();
   for (const s of movers) {
@@ -308,7 +333,6 @@ export function step(m: Match): StepResult {
     }
   }
 
-  const drops: [number, number][] = [];
   for (const [id, [killer, how]] of dead) {
     const s = m.snakes[id];
     s.alive = false;
@@ -323,7 +347,7 @@ export function step(m: Match): StepResult {
     const n = Math.floor(s.len / 2 / GOLD);
     for (let i = 0; i < n; i++) {
       const j = 2 * Math.floor((i * sl.length) / (2 * n));
-      drops.push([sl[j] + rand(m) - 0.5, sl[j + 1] + rand(m) - 0.5]);
+      drops.push([sl[j] + rand(m) - 0.5, sl[j + 1] + rand(m) - 0.5, GOLD, -1]);
     }
   }
 
@@ -352,19 +376,19 @@ export function step(m: Match): StepResult {
     const [x, y] = head(s);
     const reach = width(s.len) / 2 + MAGNET;
     m.crumbs = m.crumbs.filter((c) => {
-      if ((c.x - x) ** 2 + (c.y - y) ** 2 > reach * reach) return true;
+      if (c.owner === s.id || (c.x - x) ** 2 + (c.y - y) ** 2 > reach * reach) return true;
       s.len = q(s.len + c.v, 10);
       r.eaten.push([c.id, s.id]);
       return false;
     });
   }
-  for (const [x, y] of drops) addCrumb(m, r, x, y, GOLD);
+  for (const [x, y, v, owner] of drops) addCrumb(m, r, x, y, v, owner);
   refill(m, r);
   m.crumbs = m.crumbs.filter((c) => c.x ** 2 + c.y ** 2 <= m.wall ** 2);
 
   for (const s of movers) {
     const [x, y] = head(s);
-    r.moved.push([s.id, x, y, s.a, s.ta, s.len]);
+    r.moved.push([s.id, x, y, s.a, s.ta, s.len, s.boost ? 1 : 0]);
     if (s.alive) trimTrail(s.trail, s.len);
   }
   return r;
@@ -375,10 +399,10 @@ function setHead(s: Snake, x: number, y: number) {
   s.trail[s.trail.length - 1] = q(y, 100);
 }
 
-function addCrumb(m: Match, r: StepResult | undefined, x: number, y: number, v: number) {
-  const c = { id: m.nextCrumb++, x: q(x, 100), y: q(y, 100), v };
+function addCrumb(m: Match, r: StepResult | undefined, x: number, y: number, v: number, owner = -1) {
+  const c = { id: m.nextCrumb++, x: q(x, 100), y: q(y, 100), v, owner };
   m.crumbs.push(c);
-  r?.spawned.push([c.id, c.x, c.y, v]);
+  r?.spawned.push([c.id, c.x, c.y, v, owner]);
 }
 
 /** Food spawns until the wall starts closing; after that only deaths feed the arena. */
