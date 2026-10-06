@@ -60,6 +60,28 @@ Branch: ts-rebuild (master keeps the Rust game until switch-over).
   name in its color, crown, "(you)", bonks, time alive; my row gold-tinted), then New name / Play
   again, then the room code, invite and players. Deleted "You placed #N of M." (the table shows it).
   end-replay.js capture at 390x844 with 1 human: fits without scrolling, no console errors.
+- Cycle 10 done (UI/UX pass, plan ~/.claude/plans/parallel-prancing-biscuit.md; Arthur picked: menu
+  lobby only, skins unlock by feats, warm bakery look). Client split: profile.ts (settings, profile,
+  skins + feats, localStorage dbs-settings / dbs-profile), skins.ts (5 procedural food skins + menu
+  swatches), hud.ts (top bar chips + alive roster, feed, toast, stickers, hint, death card, watch bar),
+  screens.ts (home, lobby, results + podium, dead-link screens, settings, how-to, skin picker), dom.ts.
+  Home: Play with friends (gold) / Play now with bots (creates a room and auto-starts) / got a code? /
+  how to play, name + 🎲 + skin. Lobby: own seat first and full width, empty seats "🤖 bot", Invite
+  pulses until used, 6 preset stickers (server: 1 per 2 s per player, extras dropped), how-to loop
+  while played == 0. Anyone may press Play again in "over" (lobby Start stays host-only). In match:
+  ⏱/🍞/💥 chips, roster dots, minimap (bottom-left on touch), red edge pulse 5 s before the wall
+  moves, 🚀 boost button on touch (double-tap boost off while it is on), "you ▼" at start, arrows to
+  off-screen humans, much-lag chip (> 500 ms without a step), lite mode (frame > 28 ms for 2 s: dpr 1,
+  half particles). First matches: countdown shows device controls while played < 3; hints steer /
+  boost / cut. Death card (cause, place, time alive), then watch killer -> best human; tap switches.
+  Settings gear replaces mute: sound, music (procedural chiptune, menus only, default off), boost
+  button, shake. Look: Comic Neue (self-hosted woff2, 26 kB), cream cards, plank floor. Skins: wire
+  &s= on join, Player.skin, Snake.skin (bots (seed+id)%5, no RNG draw). OG tags + public/og.png
+  (og:image must become an absolute URL at deploy). Gestures: overscroll none, touchmove blocked
+  outside cards, no pinch zoom. typecheck, 10 tests, build pass (34.9 kB JS / 14.3 kB gzip, CSS
+  3.7 kB gzip). Replay .playwright-mcp/ui-tour.js (2 humans at 390x844 touch, 844x390, 1280x800):
+  every screen, sticker reaches the other tab, no console errors; a guest (not host) restarted a
+  round with Play again. Open: Telegram swipe test on a phone (Mini App only if swipes close it).
 
 ## Next (handoff 2026-10-06)
 - Asked Arthur: play a round at ?lag=150; does steering feel late (fine = go online first, late =
@@ -83,8 +105,8 @@ Branch: ts-rebuild (master keeps the Rust game until switch-over).
 - Still waiting on Arthur's explicit go: deploy (he runs `! npx wrangler login` once), Rust game
   deletion, stages 2-3. Open polish: snakes read small on a phone (his call: zoom changes vision).
 - Dev server: `npm run dev -- --host` (http://localhost:5173/, phone http://192.168.1.100:5173/).
-  Replays: .playwright-mcp/steer-replay.js (eat, boost, wall death) and end-replay.js (bot round to
-  the end, ~100 s), run with browser_run_code_unsafe + filename. Server logs `death`/`over` lines
+  Replays: .playwright-mcp/steer-replay.js (eat, boost, wall death), end-replay.js (bot round to
+  the end, ~100 s) and ui-tour.js (every screen, 2 tabs), run with browser_run_code_unsafe + filename. Server logs `death`/`over` lines
   in the dev output: read them after Arthur's rounds for the cut-off share.
 
 ## Measured (bot-only, 100 seeds, free steering, 2026-10-05; grid numbers in git at 400a8da)
@@ -232,6 +254,10 @@ u = new-snake width. Bots obey all human rules.
 - 2026-10-05 Room link = `/?r=CODE` (no SPA routing config).
 - 2026-10-05 Arthur: no game design change (movement, rules, rounds, balance, bots) without his OK
   first. Polish and UI/UX may go 10x without asking. Graphics can wait: working POC, clean systems.
+- 2026-10-06 UI pass (Arthur's picks + fresh-agent attack): no playable warm-up pen; skins are looks
+  only, unlocked by feats, saved per phone; Play again open to all (an idle-timer host handover was
+  rejected: it would steal host from someone sharing the link in Telegram); no vibration (no iOS
+  API); Telegram Mini App deferred until a device test shows swipes close the in-app browser.
 
 ## Paid rooms design (stage 3, not started)
 Dogecoin L1, custodial per room: one HD seed as Worker secret (separate per network, offline backup);

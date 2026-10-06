@@ -2,18 +2,38 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#1a1a2e" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#2a1d14" />
     <link rel="icon" href="/doge_head.png" />
+    <link rel="preload" href="/fonts/comic-neue-700.woff2" as="font" type="font/woff2" crossorigin />
     <title>DogeBread Snake</title>
+    <meta name="description" content="Such snek battle royale. Up to 10 friends, one shrinking arena, last doge alive wins. Free, no install." />
+    <!-- link previews (Telegram and others); og:image must become an absolute URL at deploy -->
+    <meta property="og:title" content="DogeBread Snake" />
+    <meta property="og:description" content="such snek battle royale. tap to join. wow." />
+    <meta property="og:image" content="/og.png" />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
   </head>
   <body>
     <canvas id="game"></canvas>
-    <div id="hud"></div>
-    <button id="mute" aria-label="Sound on or off"></button>
+    <div id="bg" aria-hidden="true"></div>
+    <div id="hud" hidden></div>
+    <div id="lag" hidden>📡 much lag</div>
+    <div id="hint"></div>
     <div id="feed"></div>
+    <div id="stickers"></div>
     <div id="banner"></div>
-    <section id="panel"></section>
+    <div id="sub"></div>
+    <div id="edge"></div>
+    <div id="death"></div>
+    <div id="watch" hidden></div>
+    <button id="boost" hidden aria-label="Boost">🚀</button>
+    <button id="gear" aria-label="Settings">⚙️</button>
+    <section id="panel" hidden></section>
+    <div id="modal" hidden></div>
+    <div id="toast"></div>
+    <div id="net" hidden><div>much lag.<br />reconnecting...</div></div>
     <script type="module" src="/src/client/main.ts"></script>
   </body>
 </html>

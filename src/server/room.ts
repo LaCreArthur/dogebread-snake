@@ -2,9 +2,9 @@
 // step it broadcasts what changed. Plain (non-hibernating) WebSockets keep it in memory while
 // anyone is connected; idle rooms close so they stop using the free duration quota.
 import { DurableObject } from "cloudflare:workers";
-import { boost, createMatch, ranking, SEATS, steer, step, TICK_MS, type Match } from "../game/rules";
+import { boost, createMatch, ranking, SEATS, SKIN_COUNT, steer, step, TICK_MS, type Match } from "../game/rules";
 import {
-  NAME_ADJ, NAME_NOUN, nameOf, validName,
+  NAME_ADJ, NAME_NOUN, nameOf, STICKERS, validIdx, validName,
   type ClientMsg, type NameIdx, type Phase, type ServerMsg,
 } from "../game/protocol";
 
@@ -13,15 +13,18 @@ const COUNTDOWN_MS = 3_500;
 const IDLE_MS = 10 * 60_000;
 const EMPTY_GRACE_MS = 15_000; // lets a reload take its snake back before the room resets
 const MAX_MSGS_PER_SEC = 20;
+const STICKER_GAP_MS = 2_000; // faster stickers are dropped
 
 interface Player {
   id: number;
   token: string; // private: lets a reloaded tab take its snake back
   name: NameIdx;
+  skin: number;
   ws: WebSocket | null;
   seat: number;
   msgs: number;
   msgWindow: number;
+  stickerAt: number;
 }
 
 export class Room extends DurableObject<Env> {
@@ -50,20 +53,24 @@ export class Room extends DurableObject<Env> {
     const url = new URL(req.url);
     const token = (url.searchParams.get("p") ?? "").slice(0, 64) || crypto.randomUUID();
     const asked = (url.searchParams.get("n") ?? "").split(".").map(Number);
+    const skin = Number(url.searchParams.get("s"));
     const [client, server] = Object.values(new WebSocketPair());
     server.accept();
-    this.join(server, token, validName(asked) ? asked : null);
+    this.join(server, token, validName(asked) ? asked : null, validIdx(skin, SKIN_COUNT) ? skin : 0);
     return new Response(null, { status: 101, webSocket: client });
   }
 
-  private join(ws: WebSocket, token: string, name: NameIdx | null) {
+  private join(ws: WebSocket, token: string, name: NameIdx | null, skin: number) {
     let p = this.players.find((q) => q.token === token);
     if (p) {
       p.ws?.close(4001, "replaced");
       p.ws = ws;
     } else {
       const taken = name && this.players.some((q) => nameOf(q.name) === nameOf(name));
-      p = { id: this.nextId++, token, name: name && !taken ? name : this.freeName(), ws, seat: -1, msgs: 0, msgWindow: 0 };
+      p = {
+        id: this.nextId++, token, name: name && !taken ? name : this.freeName(), skin, ws, seat: -1,
+        msgs: 0, msgWindow: 0, stickerAt: 0,
+      };
       this.players.push(p);
     }
     const me = p;
@@ -99,11 +106,18 @@ export class Room extends DurableObject<Env> {
       steer(this.match, p.seat, msg.a);
     } else if (msg.t === "boost" && this.match && p.seat >= 0 && typeof msg.on === "boolean") {
       boost(this.match, p.seat, msg.on);
-    } else if (msg.t === "start" && p.id === this.host && (this.phase === "lobby" || this.phase === "over")) {
+    } else if (msg.t === "start" && (this.phase === "over" || (this.phase === "lobby" && p.id === this.host))) {
+      // after a round anyone may start the next one, so an idle host cannot stall the room
       this.start();
     } else if (msg.t === "name") {
       p.name = this.freeName();
       this.sendRoom();
+    } else if (msg.t === "skin" && validIdx(msg.k, SKIN_COUNT)) {
+      p.skin = msg.k;
+      this.sendRoom();
+    } else if (msg.t === "sticker" && validIdx(msg.k, STICKERS.length) && now - p.stickerAt >= STICKER_GAP_MS) {
+      p.stickerAt = now;
+      this.broadcast({ t: "sticker", id: p.id, k: msg.k });
     }
   }
 
@@ -121,7 +135,9 @@ export class Room extends DurableObject<Env> {
     this.players = this.players.filter((p) => p.ws);
     this.players.forEach((p, i) => (p.seat = i < SEATS ? i : -1));
     const seated = this.players.filter((p) => p.seat >= 0);
-    this.match = createMatch(crypto.getRandomValues(new Uint32Array(1))[0], seated.map((p) => nameOf(p.name)));
+    this.match = createMatch(
+      crypto.getRandomValues(new Uint32Array(1))[0], seated.map((p) => nameOf(p.name)), seated.map((p) => p.skin),
+    );
     this.phase = "countdown";
     this.startsAt = Date.now() + COUNTDOWN_MS;
     clearTimeout(this.idle);
@@ -187,7 +203,7 @@ export class Room extends DurableObject<Env> {
   private sendRoom() {
     const players = this.players
       .filter((p) => p.ws || p.seat >= 0)
-      .map((p) => ({ id: p.id, name: nameOf(p.name), host: p.id === this.host, seat: p.seat }));
+      .map((p) => ({ id: p.id, name: nameOf(p.name), host: p.id === this.host, seat: p.seat, skin: p.skin }));
     for (const p of this.players) {
       if (p.ws) this.send(p.ws, { t: "room", code: this.code, phase: this.phase, players, you: p.id, name: p.name });
     }

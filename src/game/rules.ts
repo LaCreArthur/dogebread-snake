@@ -17,6 +17,7 @@ const SLICE_GAP = 0.5; // u between slices along the path
 const MAGNET = 2; // u past the head's edge that crumbs are eaten from
 const CRUMBS_PER_U2 = 400 / (Math.PI * 75 ** 2);
 export const GOLD = 5; // length in one crumb dropped by a death
+export const SKIN_COUNT = 5; // food skins, looks only; bots wear them in turn
 const HIT = 0.8; // contact radius factor: grazes are forgiven
 const BOOP_SLICES = 3; // a head touching another head or its first slices boops instead of dying
 const BOOP_COST = 8; // length each snake loses in a boop
@@ -58,6 +59,7 @@ export interface Snake {
   alive: boolean;
   kills: number;
   diedTick: number; // -1 while alive
+  skin: number; // looks only: a food skin index
 }
 
 export interface Crumb {
@@ -192,7 +194,7 @@ function near(b: Bodies, x: number, y: number, f: (id: number, k: number, sx: nu
 }
 
 /** Humans take the first seats in order; bots fill up to MIN_SNAKES. The arena grows with the count. */
-export function createMatch(seed: number, humans: string[]): Match {
+export function createMatch(seed: number, humans: string[], skins: number[] = []): Match {
   const n = Math.max(MIN_SNAKES, humans.length);
   const r0 = q(75 * Math.sqrt(n / 12), 100);
   const snakes = Array.from({ length: n }, (_, id): Snake => {
@@ -208,7 +210,7 @@ export function createMatch(seed: number, humans: string[]): Match {
     const human = id < humans.length;
     return {
       id, name: human ? humans[id] : BOT_NAMES[id % BOT_NAMES.length], human, trail, a, ta: a, boost: false,
-      len: START_LEN, alive: true, kills: 0, diedTick: -1,
+      len: START_LEN, alive: true, kills: 0, diedTick: -1, skin: skins[id] ?? ((seed >>> 0) + id) % SKIN_COUNT,
     };
   });
   const m: Match = {

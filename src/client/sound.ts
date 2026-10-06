@@ -1,4 +1,7 @@
-// Procedural sound effects, ported sample for sample from the Rust game (client/src/audio.rs).
+// Procedural sound effects, ported sample for sample from the Rust game (client/src/audio.rs), and a
+// short chiptune loop for the menus.
+import { settings } from "./profile";
+
 const RATE = 22050;
 const TAU = 2 * Math.PI;
 
@@ -40,14 +43,12 @@ export type Sound = keyof typeof DEFS;
 
 let ctx: AudioContext | null = null;
 const buffers = new Map<Sound, AudioBuffer>();
-let muted = false;
-try { muted = localStorage.getItem("dbs-muted") === "1"; } catch { /* default: sound on */ }
 
 // browsers start audio suspended until the page gets a gesture
 for (const type of ["pointerdown", "keydown"]) addEventListener(type, () => ctx?.resume(), { capture: true });
 
 export function play(sound: Sound) {
-  if (muted) return;
+  if (!settings.sound) return;
   ctx ??= new AudioContext();
   let buf = buffers.get(sound);
   if (!buf) {
@@ -64,8 +65,48 @@ export function play(sound: Sound) {
   src.start();
 }
 
-export const isMuted = () => muted;
-export function toggleMute() {
-  muted = !muted;
-  try { localStorage.setItem("dbs-muted", muted ? "1" : "0"); } catch { /* not remembered */ }
+// ---- menu music: 4 bars of eighths in C major pentatonic over a bass line, looped (MIDI notes, 0 = rest)
+const EIGHTH = 60 / 112 / 2;
+const MELODY = [
+  72, 0, 76, 0, 79, 76, 81, 79, 76, 0, 74, 0, 72, 74, 76, 0,
+  79, 0, 81, 0, 84, 81, 79, 76, 74, 76, 74, 72, 0, 0, 67, 0,
+];
+const BASS = [48, 55, 45, 52, 41, 48, 43, 50]; // one per half bar
+const hz = (n: number) => 440 * 2 ** ((n - 69) / 12);
+let musicTimer = 0;
+let nextNote = 0;
+let beat = 0;
+
+function note(type: OscillatorType, n: number, at: number, length: number, volume: number) {
+  const osc = ctx!.createOscillator();
+  const gain = ctx!.createGain();
+  osc.type = type;
+  osc.frequency.value = hz(n);
+  gain.gain.setValueAtTime(volume, at);
+  gain.gain.exponentialRampToValueAtTime(0.001, at + length);
+  osc.connect(gain).connect(ctx!.destination);
+  osc.start(at);
+  osc.stop(at + length);
+}
+
+/** Menus only; idempotent. Notes are scheduled 0.2 s ahead, so timer jitter does not matter. */
+export function music(on: boolean) {
+  if (on === !!musicTimer) return;
+  if (!on) {
+    clearInterval(musicTimer);
+    musicTimer = 0;
+    return;
+  }
+  ctx ??= new AudioContext();
+  nextNote = ctx.currentTime + 0.05;
+  musicTimer = window.setInterval(() => {
+    nextNote = Math.max(nextNote, ctx!.currentTime); // a throttled background tab skips notes, not bursts them
+    while (nextNote < ctx!.currentTime + 0.2) {
+      const m = MELODY[beat % MELODY.length];
+      if (m) note("square", m, nextNote, EIGHTH * 0.9, 0.035);
+      if (beat % 4 === 0) note("triangle", BASS[(beat / 4) % BASS.length], nextNote, EIGHTH * 3.6, 0.09);
+      nextNote += EIGHTH;
+      beat++;
+    }
+  }, 50);
 }

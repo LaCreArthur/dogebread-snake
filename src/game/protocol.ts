@@ -11,11 +11,16 @@ export const validName = (v: unknown): v is NameIdx =>
   Array.isArray(v) && v.length === 2 && Number.isInteger(v[0]) && Number.isInteger(v[1]) &&
   v[0] >= 0 && v[0] < NAME_ADJ.length && v[1] >= 0 && v[1] < NAME_NOUN.length;
 
+/** Preset stickers: the only messages players send each other. */
+export const STICKERS = ["🐕 wow", "🏆 much skill", "💀 rip", "🙏 plz start", "⏳ such wait", "🤝 gg"];
+export const validIdx = (v: unknown, n: number): v is number => Number.isInteger(v) && (v as number) >= 0 && (v as number) < n;
+
 export interface PlayerInfo {
   id: number;
   name: string;
   host: boolean;
   seat: number; // snake id in the current match, -1 = watching
+  skin: number;
 }
 
 /** The match as clients see it: no RNG state. */
@@ -27,6 +32,9 @@ export type ServerMsg =
   | { t: "room"; code: string; phase: Phase; players: PlayerInfo[]; you: number; name: NameIdx }
   | { t: "snap"; m: PublicMatch; countdownMs: number }
   | StepMsg
-  | { t: "over"; winner: number; rank: number[] };
+  | { t: "over"; winner: number; rank: number[] }
+  | { t: "sticker"; id: number; k: number }; // id: the sending player
 
-export type ClientMsg = { t: "steer"; a: number } | { t: "boost"; on: boolean } | { t: "start" } | { t: "name" };
+export type ClientMsg =
+  | { t: "steer"; a: number } | { t: "boost"; on: boolean } | { t: "start" } | { t: "name" }
+  | { t: "skin"; k: number } | { t: "sticker"; k: number };

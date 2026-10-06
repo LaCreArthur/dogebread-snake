@@ -1,13 +1,17 @@
-// Canvas drawing. The camera follows my snake (or, a moment after I die, the longest one) and zooms
+// Canvas drawing. The camera follows my snake (or, a moment after I die, the snake I watch) and zooms
 // out as snakes widen. Bodies come from the shared trail geometry, so they are drawn where the
 // server collides them; between ticks each head glides on along its heading.
 import { boosting, head, slicesOf, speedOf, TICK_MS, WALL_HOLD_MS, width, type Snake } from "../game/rules";
 import type { Replica } from "../game/replica";
+import { settings, touch } from "./profile";
+import { dogeHead, paintBody } from "./skins";
 
-const OUTSIDE = "#120f1f";
-const FLOOR = "#23233d";
-const GRID = "rgba(255,255,255,0.04)";
+const OUTSIDE = "#1c140e";
+const FLOOR = "#3a2e24"; // a dark wooden board
+const SEAM = "rgba(0,0,0,0.22)"; // plank seams, every 4 u
 const VIEW_U2 = 3500; // world area on screen for a new snake, on any device
+const WARN_MS = 5_000; // the minimap's wall blinks this long before it closes
+const MAP_R = 44; // minimap radius, px
 const DEATH_HOLD_MS = 1200;
 const WIN_ZOOM = 1.6; // the camera moves in on the winner at the end
 export const STICK_PX = 60; // touch steering: the anchor follows a finger farther than this
@@ -22,10 +26,8 @@ export const snakeColor = (id: number, k = 1) => {
   return `rgb(${(r * k) | 0},${(g * k) | 0},${(b * k) | 0})`;
 };
 
-const image = (src: string) => Object.assign(new Image(), { src });
-const dogeHead = image("/doge_head.png");
-const coin = image("/coin.png");
-const font = (size: number) => `bold ${Math.round(size)}px "Comic Sans MS", "Chalkboard SE", cursive`;
+const coin = Object.assign(new Image(), { src: "/coin.png" });
+export const font = (size: number) => `bold ${Math.round(size)}px "Comic Neue", "Comic Sans MS", cursive`;
 
 // effects live in world units, like the snakes
 interface Particle { x: number; y: number; vx: number; vy: number; age: number; life: number; size: number; color: string }
@@ -37,6 +39,7 @@ export interface Input {
   steer: number | null; // my heading input
   boost: boolean;
   stick: { id: number; ax: number; ay: number; x: number; y: number } | null; // touch: pointer, anchor and finger, px
+  watch: number | null; // the snake the camera follows once mine is dead (or I only watch)
 }
 
 export function createRenderer(canvas: HTMLCanvasElement) {
@@ -49,9 +52,14 @@ export function createRenderer(canvas: HTMLCanvasElement) {
   const pops: Pop[] = [];
   let shake = 0; // px, decays every frame
   const sl: number[] = [];
+  const sp: number[] = []; // the same slices on screen
+  // lite mode: a slow device (mean frame over 28 ms for 2 s) drops to 1x pixels and half the particles
+  let lite = false;
+  let frames = 0;
+  let frameTime = 0;
 
   const spray = (x: number, y: number, n: number, speed: number, life: number, size: number, colors: string[]) => {
-    for (let i = 0; i < n; i++) {
+    for (let i = 0; i < (lite ? n / 2 : n); i++) {
       const a = Math.random() * 2 * Math.PI;
       const v = speed * (0.3 + 0.7 * Math.random());
       parts.push({
@@ -62,7 +70,7 @@ export function createRenderer(canvas: HTMLCanvasElement) {
   };
 
   const resize = () => {
-    const dpr = Math.min(devicePixelRatio || 1, 2);
+    const dpr = lite ? 1 : Math.min(devicePixelRatio || 1, 2);
     canvas.width = innerWidth * dpr;
     canvas.height = innerHeight * dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -74,12 +82,21 @@ export function createRenderer(canvas: HTMLCanvasElement) {
   function draw(r: Replica, input: Input, sinceTick: number, now: number) {
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
+    if (!lite && document.visibilityState === "visible") {
+      frames++;
+      frameTime += dt;
+      if (frameTime >= 2) {
+        lite = frameTime / frames > 0.028;
+        if (lite) resize();
+        frames = frameTime = 0;
+      }
+    }
     const cw = innerWidth;
     const ch = innerHeight;
+    const m = r.m;
+    if (!m) return void ctx.clearRect(0, 0, cw, ch); // menus show the page background
     ctx.fillStyle = OUTSIDE;
     ctx.fillRect(0, 0, cw, ch);
-    const m = r.m;
-    if (!m) return;
 
     // between ticks, live heads glide on along their heading
     const since = r.phase === "playing" && !m.over ? Math.min(sinceTick, TICK_MS) / 1000 : 0;
@@ -89,13 +106,15 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       return [x + Math.cos(s.a) * d, y + Math.sin(s.a) * d];
     };
 
-    // camera: my snake, held on my crumbs a moment after I die, then the longest; close on the winner
-    // at the end, or the whole arena after a draw
+    // camera: my snake, held on my crumbs a moment after I die, then the snake I watch (else the
+    // longest); close on the winner at the end, or the whole arena after a draw
     const me = r.seat >= 0 ? m.snakes[r.seat] : undefined;
     if (me?.alive) seenAlive = now;
     const leader = m.snakes.filter((s) => s.alive).sort((a, b) => b.len - a.len)[0];
     const champ = m.over && m.winner >= 0 ? m.snakes[m.winner] : undefined;
-    const focus = champ ?? (me?.alive || (me && now - seenAlive < DEATH_HOLD_MS) ? me : leader);
+    const watched = input.watch !== null ? m.snakes[input.watch] : undefined;
+    const focus = champ ??
+      (me?.alive || (me && now - seenAlive < DEATH_HOLD_MS) ? me : watched?.alive ? watched : leader);
     let tx = 0;
     let ty = 0;
     let tk = Math.min(cw, ch) / (2 * m.r0 + 4);
@@ -117,7 +136,8 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     const X = (x: number) => ox + x * k;
     const Y = (y: number) => oy - y * k;
 
-    // the arena: floor inside the wall with a faint grid; the wall glows red once it closes in
+    // the arena: a wooden board inside the wall (planks 4 u wide, joints staggered every 16 u); the
+    // wall glows red once it closes in
     ctx.fillStyle = FLOOR;
     ctx.beginPath();
     ctx.arc(X(0), Y(0), m.wall * k, 0, 2 * Math.PI);
@@ -125,13 +145,18 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     if (k >= 4) {
       ctx.save();
       ctx.clip();
-      ctx.fillStyle = GRID;
-      for (let x = Math.ceil((cam.x - cw / 2 / k) / 4) * 4; X(x) < cw; x += 4) ctx.fillRect(X(x), 0, 1, ch);
-      for (let y = Math.floor((cam.y + ch / 2 / k) / 4) * 4; Y(y) < ch; y -= 4) ctx.fillRect(0, Y(y), cw, 1);
+      ctx.fillStyle = SEAM;
+      for (let y = Math.floor((cam.y + ch / 2 / k) / 4) * 4; Y(y) < ch; y -= 4) {
+        ctx.fillRect(0, Y(y), cw, 2);
+        const shift = (y / 4) % 2 ? 8 : 0;
+        for (let x = Math.floor((cam.x - cw / 2 / k - shift) / 16) * 16 + shift; X(x) < cw; x += 16) {
+          ctx.fillRect(X(x), Y(y), 2, 4 * k);
+        }
+      }
       ctx.restore();
     }
     const closing = m.timeMs >= WALL_HOLD_MS && !m.over;
-    ctx.strokeStyle = closing ? `rgba(255,70,70,${0.6 + 0.3 * Math.sin(now / 120)})` : "#3a3a66";
+    ctx.strokeStyle = closing ? `rgba(255,70,70,${0.6 + 0.3 * Math.sin(now / 120)})` : "#6b4423";
     ctx.lineWidth = closing ? 4 : 3;
     ctx.beginPath();
     ctx.arc(X(0), Y(0), m.wall * k, 0, 2 * Math.PI);
@@ -152,41 +177,18 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       }
     }
 
-    // bodies as one round stroke, crossed by bread-slice lines; mine is drawn last, on top
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
+    // bodies in their food skin, outlined in the snake's color; mine is drawn last, on top
     for (const s of [...m.snakes.filter((s) => s !== me), ...(me ? [me] : [])]) {
       if (!s.alive) continue; // dead snakes burst into crumbs instead
       const [hx, hy] = glide(s);
       slicesOf(s.trail, s.len, sl, hx, hy);
+      sp.length = sl.length;
+      for (let i = 0; i < sl.length; i += 2) {
+        sp[i] = X(sl[i]);
+        sp[i + 1] = Y(sl[i + 1]);
+      }
       const w = width(s.len) * k;
-      ctx.beginPath();
-      ctx.moveTo(X(sl[0]), Y(sl[1]));
-      for (let i = 2; i < sl.length; i += 2) ctx.lineTo(X(sl[i]), Y(sl[i + 1]));
-      if (boosting(s)) {
-        ctx.strokeStyle = `rgba(255,255,255,${0.25 + 0.15 * Math.sin(now / 50)})`;
-        ctx.lineWidth = w + 8;
-        ctx.stroke();
-      }
-      ctx.strokeStyle = snakeColor(s.id, 0.45);
-      ctx.lineWidth = w + 2;
-      ctx.stroke();
-      ctx.strokeStyle = snakeColor(s.id, 0.8);
-      ctx.lineWidth = w;
-      ctx.stroke();
-      ctx.beginPath();
-      for (let i = 4; i + 3 < sl.length; i += 4) {
-        const dx = X(sl[i + 2]) - X(sl[i - 2]);
-        const dy = Y(sl[i + 3]) - Y(sl[i - 1]);
-        const d = Math.hypot(dx, dy) || 1;
-        const px = (-dy / d) * w * 0.38;
-        const py = (dx / d) * w * 0.38;
-        ctx.moveTo(X(sl[i]) - px, Y(sl[i + 1]) - py);
-        ctx.lineTo(X(sl[i]) + px, Y(sl[i + 1]) + py);
-      }
-      ctx.strokeStyle = snakeColor(s.id, 0.55);
-      ctx.lineWidth = Math.max(1, w * 0.12);
-      ctx.stroke();
+      paintBody(ctx, sp, w, s.skin, snakeColor(s.id), boosting(s) ? 0.25 + 0.15 * Math.sin(now / 50) : 0);
       const size = w * 1.6;
       if (dogeHead.complete) ctx.drawImage(dogeHead, X(hx) - size / 2, Y(hy) - size / 2, size, size);
     }
@@ -233,6 +235,16 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       ctx.beginPath();
       ctx.arc(X(hx), Y(hy), w * 0.95, 0, 2 * Math.PI);
       ctx.stroke();
+      // "you" over my head while the round starts, so I find myself among the snakes
+      if (r.phase === "countdown" || m.timeMs < 2500) {
+        const y = Y(hy) - w * 1.4 - 10 - 4 * Math.abs(Math.sin(now / 200));
+        ctx.font = font(18);
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = "rgba(0,0,0,0.7)";
+        ctx.strokeText("you ▼", X(hx), y);
+        ctx.fillStyle = "#fff";
+        ctx.fillText("you ▼", X(hx), y);
+      }
       if (input.steer !== null) {
         const a = -input.steer; // screen y points down
         const mx = X(hx) + Math.cos(a) * (w + 12);
@@ -264,6 +276,31 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       ctx.fill();
     }
 
+    // other players off screen: an arrow at the edge, in their color, with their initials
+    if (!m.over) {
+      for (const s of m.snakes) {
+        if (!s.alive || !s.human || s === me) continue;
+        const [hx, hy] = glide(s);
+        const dx = X(hx) - cw / 2;
+        const dy = Y(hy) - ch / 2;
+        const hw = cw / 2 - 22;
+        const hh = ch / 2 - 22;
+        const f = Math.max(Math.abs(dx) / hw, Math.abs(dy) / hh);
+        if (f <= 1) continue;
+        const x = cw / 2 + dx / f;
+        const y = ch / 2 + dy / f;
+        const a = Math.atan2(dy, dx);
+        ctx.fillStyle = snakeColor(s.id);
+        ctx.beginPath();
+        ctx.moveTo(x + Math.cos(a) * 12, y + Math.sin(a) * 12);
+        ctx.lineTo(x + Math.cos(a + 2.3) * 10, y + Math.sin(a + 2.3) * 10);
+        ctx.lineTo(x + Math.cos(a - 2.3) * 10, y + Math.sin(a - 2.3) * 10);
+        ctx.fill();
+        ctx.font = font(12);
+        ctx.fillText(s.name.split(" ").map((w) => w[0]).join(""), x - Math.cos(a) * 14, y - Math.sin(a) * 14 + 4);
+      }
+    }
+
     // reward text floats up and fades; a dark outline keeps it readable over any snake
     ctx.font = font(Math.max(14, k * 1.6));
     ctx.lineWidth = 3;
@@ -284,6 +321,36 @@ export function createRenderer(canvas: HTMLCanvasElement) {
       ctx.fillText(p.text, x, y);
     }
     ctx.globalAlpha = 1;
+    if (!m.over) minimap(m, me, cw, ch, now);
+  }
+
+  /** The whole arena in a corner: the wall, and a dot per head (players bigger, mine white). */
+  function minimap(m: NonNullable<Replica["m"]>, me: Snake | undefined, cw: number, ch: number, now: number) {
+    const cx = touch ? 12 + MAP_R : cw - 12 - MAP_R; // phones: the boost button takes the right corner
+    const cy = ch - 12 - MAP_R - (touch ? 8 : 0);
+    const s = MAP_R / m.r0;
+    ctx.fillStyle = "rgba(28,20,14,0.7)";
+    ctx.strokeStyle = "rgba(255,243,214,0.5)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, MAP_R + 3, 0, 2 * Math.PI);
+    ctx.fill();
+    ctx.stroke();
+    const warn = m.timeMs >= WALL_HOLD_MS - WARN_MS;
+    if (!warn || m.timeMs >= WALL_HOLD_MS || Math.sin(now / 100) > 0) {
+      ctx.strokeStyle = warn ? "#ff4646" : "rgba(255,243,214,0.35)";
+      ctx.beginPath();
+      ctx.arc(cx, cy, m.wall * s, 0, 2 * Math.PI);
+      ctx.stroke();
+    }
+    for (const sn of m.snakes) {
+      if (!sn.alive) continue;
+      const [x, y] = head(sn);
+      ctx.fillStyle = sn === me ? "#fff" : snakeColor(sn.id);
+      ctx.beginPath();
+      ctx.arc(cx + x * s, cy - y * s, sn === me ? 3.5 : sn.human ? 3 : 2, 0, 2 * Math.PI);
+      ctx.fill();
+    }
   }
 
   return {
@@ -298,7 +365,7 @@ export function createRenderer(canvas: HTMLCanvasElement) {
     /** Confetti for the winner, in gold, white and its own color. */
     cheer: (s: Snake) => spray(...head(s), 80, 22, 2.2, 0.5, ["#ffd96a", "#fff", snakeColor(s.id)]),
     pop: (x: number, y: number, text: string, color: string) => void pops.push({ x, y: y + 1, age: 0, text, color }),
-    /** Strongest request wins; it decays over about a quarter second. */
-    shake: (px: number) => void (shake = Math.max(shake, px)),
+    /** Strongest request wins; it decays over about a quarter second. Off in the settings: none. */
+    shake: (px: number) => void (settings.shake && (shake = Math.max(shake, px))),
   };
 }
