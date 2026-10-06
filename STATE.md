@@ -3,7 +3,7 @@
 Goal: VISION.md stage 1 (TypeScript rebuild + room links, bots fill, deployed on Cloudflare free plan,
 Rust game deleted at switch-over).
 Mode: pair (Arthur at the keyboard; his playtest is the judge). Started 2026-10-05.
-Loop job: 62a0a19e (cron */20, "/iterate tick", session-only, expires 2026-10-12)
+Loop job: none (62a0a19e deleted 2026-10-06: Arthur said "finish your current task then stop and handoff").
 Branch: ts-rebuild (master keeps the Rust game until switch-over).
 
 ## Current
@@ -60,6 +60,32 @@ Branch: ts-rebuild (master keeps the Rust game until switch-over).
   name in its color, crown, "(you)", bonks, time alive; my row gold-tinted), then New name / Play
   again, then the room code, invite and players. Deleted "You placed #N of M." (the table shows it).
   end-replay.js capture at 390x844 with 1 human: fits without scrolling, no console errors.
+
+## Next (handoff 2026-10-06)
+- Asked Arthur: play a round at ?lag=150; does steering feel late (fine = go online first, late =
+  build own-snake prediction first)? He answered, verbatim: "we do wath snake.io /slither.io do; and
+  we should do the same for the head also, not sure for the bump. same for everything else for now."
+- Reading (not yet confirmed with him; state it in the first reply and let him correct): netcode
+  copies slither.io for every snake including mine, so no own-snake prediction beyond what slither
+  does; "the head" is either my head (treated like the others) or slither's eyes that look at the
+  cursor at once (our immediate steer arrow already plays that part); the boop stays (he is unsure,
+  and design changes need his OK); "everything else" = the other netcode choices, not a mandate to
+  redesign rules.
+- Open fact to check first: does slither.io's client turn its own snake locally on input, or only
+  when the server's rotation packet comes back? Source: ClitherProject Slither.io-Protocol on GitHub
+  (packets "e"/"E" set ang/wang/sp; clients dead-reckon heads and smooth corrections with fx/fy).
+  If local: build own-angle prediction. If not: no prediction.
+- Then build the slither-style client: every frame, dead-reckon each live snake from its last
+  server state (turn toward ta at the turn rate, speedOf), no one-tick cap (cap ~250 ms when steps
+  stop), and blend a per-snake head offset that decays over ~100 ms when a step corrects the
+  position, instead of snapping. Today: heads glide straight along their heading, capped at one tick.
+  Check with ?lag=150 and ?lag=300 plus jitter (the lag tool has none: add a jitter value).
+- Still waiting on Arthur's explicit go: deploy (he runs `! npx wrangler login` once), Rust game
+  deletion, stages 2-3. Open polish: snakes read small on a phone (his call: zoom changes vision).
+- Dev server: `npm run dev -- --host` (http://localhost:5173/, phone http://192.168.1.100:5173/).
+  Replays: .playwright-mcp/steer-replay.js (eat, boost, wall death) and end-replay.js (bot round to
+  the end, ~100 s), run with browser_run_code_unsafe + filename. Server logs `death`/`over` lines
+  in the dev output: read them after Arthur's rounds for the cut-off share.
 
 ## Measured (bot-only, 100 seeds, free steering, 2026-10-05; grid numbers in git at 400a8da)
 - Round length p10 75 s, median 95 s, p90 108 s, max 111 s (target 60-120 s, max 2:30). Deaths: 96%
