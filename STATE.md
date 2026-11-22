@@ -4,7 +4,8 @@ Goal: VISION.md stage 1 (TypeScript rebuild + room links, bots fill, deployed on
 Rust game deleted at switch-over).
 Mode: pair (Arthur at the keyboard; his playtest is the judge). Started 2026-10-05.
 Loop job: none (62a0a19e deleted 2026-10-06: Arthur said "finish your current task then stop and handoff").
-Branch: ts-rebuild (master keeps the Rust game until switch-over).
+Branch: master. The TypeScript rebuild landed here; no ts-rebuild branch exists. The Rust game
+(Cargo.toml, client/, server/, shared/, web/) still sits beside it until switch-over.
 
 ## Current
 - Cycle 1 done: rules port + Room Durable Object + canvas client + room links + host start + dev
